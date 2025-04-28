@@ -1,5 +1,5 @@
 from pathlib import Path
 
 PACKAGE_DIR = Path(__file__).parent
-PROJECT_ROOT = PACKAGE_DIR.parent.parent
-LAYOUTS_PATH = PROJECT_ROOT / "layouts"
+LAYOUTS_PATH = PACKAGE_DIR / "layouts"
+PROTOCOLS_PATH = PACKAGE_DIR / "protocols"

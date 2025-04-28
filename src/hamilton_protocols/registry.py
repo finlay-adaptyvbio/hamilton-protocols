@@ -1,5 +1,7 @@
 import importlib
 import inspect
+import os
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -7,6 +9,8 @@ from typing import Any
 
 from adaptyv_lab.logging import get_logger
 from pydantic import BaseModel
+
+from hamilton_protocols import PROTOCOLS_PATH
 
 
 class ProtocolInfo:
@@ -42,12 +46,12 @@ class ProtocolRegistry:
         self.logger = get_logger(__name__)
         self._discovery_time = 0
 
-    def discover_protocols(self, protocols_dir: str = "protocols") -> None:
+    def discover_protocols(self, protocols_path: Path = PROTOCOLS_PATH) -> None:
         """Discover protocols in the given directory.
 
         Parameters
         ----------
-        protocols_dir : str
+        protocols_path : Path
             The directory to discover protocols in
 
         Raises
@@ -55,13 +59,17 @@ class ProtocolRegistry:
         ValueError
             If the protocols directory does not exist
         """
-        self.logger.info(f"Discovering protocols in {protocols_dir}")
+        self.logger.info(f"Discovering protocols in {protocols_path}")
         start_time = time.time()
 
-        protocols_path = Path(protocols_dir)
         if not protocols_path.exists():
-            self.logger.error(f"Protocols directory {protocols_dir} does not exist")
-            raise ValueError(f"Protocols directory {protocols_dir} does not exist")
+            self.logger.error(f"Protocols directory {protocols_path} does not exist")
+            raise ValueError(f"Protocols directory {protocols_path} does not exist")
+
+        # Add the parent directory to sys.path to make protocols importable
+        parent_dir = str(protocols_path.parent.absolute())
+        if parent_dir not in sys.path:
+            sys.path.insert(0, parent_dir)
 
         # Clear existing protocols to prevent duplicates on rediscovery
         self.protocols = {}
@@ -75,12 +83,14 @@ class ProtocolRegistry:
             # Get file modification time for cache invalidation
             mod_time = file_path.stat().st_mtime
 
-            # Create module path correctly
-            module_name = file_path.stem  # Just the filename without extension
-            module_path = f"{protocols_dir}.{module_name}"
+            # Convert the file path to a module path
+            rel_path = file_path.relative_to(protocols_path.parent)
+            module_parts = str(rel_path).replace(".py", "").replace(os.sep, ".")
+            module_path = module_parts
 
             try:
                 # Import the module
+                self.logger.debug(f"Importing module {module_path}")
                 module = importlib.import_module(module_path)
 
                 # Extract tags from module docstring if available
@@ -120,6 +130,7 @@ class ProtocolRegistry:
                             last_modified=mod_time,
                         )
                         protocols_found += 1
+                        self.logger.debug(f"Added protocol {protocol_name}")
 
             except Exception as e:
                 self.logger.error(
