@@ -3,6 +3,7 @@ from pathlib import Path
 
 from adaptyv_lab import Protocol
 from pydantic import BaseModel, Field
+from hamilton_protocols import LAYOUTS_PATH
 
 
 class MaxPlateProtocolParams(BaseModel):
@@ -33,7 +34,9 @@ class MaxPlateProtocolParams(BaseModel):
 
 
 def max_plate_protocol(
-    params: MaxPlateProtocolParams, simulate: bool = False
+    params: MaxPlateProtocolParams,
+    simulate: bool = False,
+    protocol: Protocol | None = None,
 ) -> Protocol:
     plates = params.plates
     probe_columns = params.probe_columns
@@ -42,7 +45,7 @@ def max_plate_protocol(
 
     protocol = Protocol.from_layout(
         name="Max Plate Protocol",
-        layout_file=Path("layouts/bli.lay"),
+        layout_file=LAYOUTS_PATH / Path("bli.lay"),
         simulator_mode=simulate,
     )
     if not protocol.deck:

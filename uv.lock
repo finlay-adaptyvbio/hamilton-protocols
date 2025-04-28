@@ -5,7 +5,7 @@ requires-python = ">=3.13"
 [[package]]
 name = "adaptyv-lab"
 version = "0.1.0"
-source = { git = "https://github.com/adaptyvbio/adaptyv-lab.git#fc6f46946f5748ff86b51784cc7bf66432fd756d" }
+source = { git = "https://github.com/adaptyvbio/adaptyv-lab.git#222ce521993edb2c6441a94d623b598440efadef" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pandas" },
