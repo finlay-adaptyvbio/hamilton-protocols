@@ -1,9 +1,8 @@
 import math
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
 from adaptyv_lab import Protocol
+from pydantic import BaseModel, Field
 
 
 class MaxPlateProtocolParams(BaseModel):

@@ -1,10 +1,33 @@
 [project]
 name = "hamilton-protocols"
 version = "0.1.0"
-description = "Add your description here"
+description = "library for Hamilton protocols"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = ["adaptyv-lab"]
 
 [tool.uv.sources]
 adaptyv-lab = { git = "https://github.com/adaptyvbio/adaptyv-lab.git" }
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "ipywidgets>=8.1.6",
+    "nbformat>=5.10.4",
+    "plotly>=6.0.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+# select = ["ALL"]
+ignore = ["E501", "TID", "COM", "C90", "FBT"]
+fixable = ["ALL"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"

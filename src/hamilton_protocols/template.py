@@ -5,15 +5,12 @@ This template demonstrates how to create a Hamilton protocol with proper
 parameter validation, documentation, and tagging.
 
 @tag: example
-@tag: template
 """
 
 from pathlib import Path
-from typing import List, Optional
-
-from pydantic import BaseModel, Field
 
 from adaptyv_lab import Protocol
+from pydantic import BaseModel, Field
 
 
 class ExampleProtocolParams(BaseModel):
@@ -41,7 +38,7 @@ class ExampleProtocolParams(BaseModel):
     mix_cycles: int = Field(0, ge=0, le=10, description="Number of mixing cycles")
 
     # Optional list parameters
-    positions: Optional[List[str]] = Field(
+    positions: list[str] | None = Field(
         None, description="Specific positions to transfer from (default: all positions)"
     )
 
@@ -137,24 +134,3 @@ def example_protocol(params: ExampleProtocolParams, simulate: bool = False) -> P
     protocol.eject_tips(mode=1)  # Eject to default waste
 
     return protocol
-
-
-# This pattern enables the protocol to be run directly for testing
-if __name__ == "__main__":
-    # Example parameters for testing
-    test_params = ExampleProtocolParams(
-        source_plate="A1",
-        dest_plate="B1",
-        volume=100.0,
-        mix_cycles=3,
-    )
-
-    # Create protocol
-    protocol = example_protocol(test_params, simulate=True)
-
-    # Print protocol commands
-    for i, cmd in enumerate(protocol.commands):
-        print(f"[{i + 1}] {cmd.__class__.__name__}: {cmd.command}")
-
-    # Optionally run the protocol
-    # asyncio.run(protocol.run())
