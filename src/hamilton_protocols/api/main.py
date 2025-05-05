@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from ..registry import registry
 from pydantic import BaseModel
+from traceback import format_exc
 
 app = FastAPI(title="hamilton-runner API")
 
@@ -103,6 +104,7 @@ async def run_protocol(protocol_id: str, request: RunProtocolRequest):
 
         return response
     except Exception as e:
+        print(format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
