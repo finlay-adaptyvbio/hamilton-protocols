@@ -1,10 +1,11 @@
+from traceback import format_exc
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from ..registry import registry
 from pydantic import BaseModel
-from traceback import format_exc
+
+from ..registry import registry
 
 app = FastAPI(title="hamilton-runner API")
 
