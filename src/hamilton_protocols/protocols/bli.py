@@ -3,6 +3,7 @@ from pathlib import Path
 
 from adaptyv_lab import Protocol
 from pydantic import BaseModel, Field
+
 from hamilton_protocols import LAYOUTS_PATH
 
 
@@ -24,27 +25,18 @@ def get_volume_per_channel(
         raise ValueError("Number of channels must be greater than zero.")
     if volume_per_well > max_volume:
         raise ValueError("Volume per well exceeds maximum volume.")
-    # Calculate wells per channel based on max volume
     wells_per_channel_max = int(max_volume / volume_per_well)
-
-    # Check if all wells can be distributed
     if wells > wells_per_channel_max * num_channels:
         raise ValueError(
             f"Cannot distribute {wells} wells across {num_channels} channels with max {wells_per_channel_max} wells per channel."
         )
 
-    # Initialize volumes for each channel
     volumes = [0.0] * num_channels
-
-    # First, distribute wells evenly
     wells_per_channel_min = wells // num_channels
     remaining_wells = wells % num_channels
 
     for i in range(num_channels):
-        # Allocate the minimum number of wells to each channel
         volumes[i] = round(wells_per_channel_min * volume_per_well, 2)
-
-    # Distribute remaining wells one by one
     for i in range(remaining_wells):
         volumes[i] += volume_per_well
 
@@ -116,7 +108,7 @@ class LoadingPlateParams(BaseModel):
         default=5,
         ge=1,
         description="Dilution factor for expression",
-        title="Expression Dilution Factor",
+        title="Expression D_f",
     )
     replicates: int = Field(
         default=1, ge=1, description="Number of replicates", title="Replicates"
@@ -125,7 +117,7 @@ class LoadingPlateParams(BaseModel):
         default=80,
         ge=1,
         description="Final dilution factor of expression",
-        title="Final Dilution Factor",
+        title="Final D_f",
     )
     dilution_buffer: str = Field(
         default="L",
@@ -155,30 +147,14 @@ class LoadingPlateParams(BaseModel):
         title = "Loading Plate Configuration"
 
 
-class LoadingPlateProtocolParams(BaseModel):
-    """Parameters for the loading plate preparation protocol."""
-
-    plates: list[LoadingPlateParams] = Field(
-        default_factory=lambda: [LoadingPlateParams()],
-        description="List of loading plate configurations",
-        min_length=1,
-        max_length=4,
-        title="Loading Plates",
-    )
-
-    class Config:
-        title = "Loading Plate Protocol Parameters"
-
-
 class SampleParams(BaseModel):
     """Parameters for configuring a sample in a sample plate."""
 
     dilution_factor: float = Field(
-        default=math.sqrt(10),
+        default=round(math.sqrt(10), 2),
         ge=1.0,
-        le=10.0,
         description="Final dilution factor of expression",
-        title="Dilution Factor",
+        title="D_f",
     )
     volume: float = Field(
         default=40.0,
@@ -256,21 +232,6 @@ class SamplePlateParams(BaseModel):
         title = "Sample Plate Configuration"
 
 
-class SamplePlateProtocolParams(BaseModel):
-    """Parameters for the sample plate preparation protocol."""
-
-    plates: list[SamplePlateParams] = Field(
-        default_factory=lambda: [SamplePlateParams()],
-        description="List of sample plate configurations",
-        min_length=1,
-        max_length=4,
-        title="Sample Plates",
-    )
-
-    class Config:
-        title = "Sample Plate Protocol Parameters"
-
-
 class BLIPlatePrepParams(BaseModel):
     """Parameters for the BLI plate preparation protocol.
 
@@ -280,11 +241,13 @@ class BLIPlatePrepParams(BaseModel):
 
     loading_plates: list[LoadingPlateParams] = Field(
         default_factory=lambda: [LoadingPlateParams()],
+        max_length=4,
         description="List of loading plate configurations. These plates contain the protein samples to be loaded onto the biosensors.",
         title="Loading Plates",
     )
     sample_plates: list[SamplePlateParams] = Field(
         default_factory=lambda: [SamplePlateParams()],
+        max_length=4,
         description="List of sample plate configurations. These plates contain the analyte samples at different concentrations.",
         title="Sample Plates",
     )
@@ -302,20 +265,6 @@ def max_plate_protocol(
 
     This protocol sets up plates containing buffer and regeneration solution for
     the biosensor tips.
-
-    Parameters
-    ----------
-    params : MaxPlateProtocolParams
-        Protocol parameters
-    simulate : bool | None, optional
-        Whether to run in simulation mode, by default None
-    protocol : Protocol | None, optional
-        Existing protocol to add steps to, by default None
-
-    Returns
-    -------
-    Protocol
-        Configured protocol
     """
     plates = params.plates
 
@@ -406,22 +355,8 @@ def bli_plate_prep_protocol(
 ) -> Protocol:
     """Prepare all plates for a BLI experiment in one protocol.
 
-    This protocol chains together the preparation of MAX plates, loading plates,
-    and sample plates for Bio-Layer Interferometry (BLI) experiments.
-
-    Parameters
-    ----------
-    params : BLIPlatePrepParams
-        Protocol parameters including configurations for all plate types
-    simulate : bool, optional
-        Whether to run in simulation mode, by default False
-    protocol : Protocol | None, optional
-        Existing protocol to add steps to, by default None
-
-    Returns
-    -------
-    Protocol
-        Configured protocol
+    This protocol chains together the preparation of loading plates and
+    sample plates for BLI experiments.
     """
     protocol = Protocol.from_layout(
         name="BLI Plate Prep Protocol",
