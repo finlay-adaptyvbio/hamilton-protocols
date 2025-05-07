@@ -79,13 +79,13 @@ class LoadingPlateParams(BaseModel):
         default=1, ge=1, description="Number of replicates", title="Replicates"
     )
     final_df: int = Field(
-        default=80,
+        default=40,
         ge=1,
         description="Final dilution factor of expression",
         title="Final D_f",
     )
     dilution_buffer: str = Field(
-        default="L",
+        default="K",
         description="Dilution buffer",
         pattern="^[KL]$",
         title="Dilution Buffer",
@@ -371,13 +371,13 @@ def bli_plate_prep_protocol(
     k_buffer_tips = protocol.deck.get_tip_rack("A3")
     l_buffer_tips = protocol.deck.get_tip_rack("A2")
     hv_tips = protocol.deck.get_tip_rack("E3")
-    loading_tips_src = protocol.deck.get_tip_rack_stack("E2")
+    loading_tips_src = protocol.deck.get_tip_rack_stack("E2")[:n_loading_plates]
     loading_tips = protocol.deck.get_tip_rack("D2")
     sample_tips = protocol.deck.get_tip_rack("A1")
 
     # reservoirs
-    k_buffer = protocol.deck.get_reservoir("B4")
-    l_buffer = protocol.deck.get_reservoir("B3")
+    l_buffer = protocol.deck.get_reservoir("B4")
+    k_buffer = protocol.deck.get_reservoir("B3")
 
     # carriers
     tube_carrier = protocol.deck.get_tube_carrier("C1")
@@ -426,7 +426,7 @@ def bli_plate_prep_protocol(
                 )
         protocol.eject_tips(mode=1)
 
-        protocol.pickup_tips(holder_tips[-rows * 2 :: 2, -cols * 2 :: 2])   
+        protocol.pickup_tips(holder_tips[-rows * 2 :: 2, -cols * 2 :: 2])
         for _ in range(dilution_dispense_cycles):
             protocol.aspirate(buffer, volume=dil_well_vol).dispense(
                 a_plate, volume=dil_well_vol
@@ -441,7 +441,7 @@ def bli_plate_prep_protocol(
             protocol.aspirate(
                 expression_plate[src_well[0], src_well[1]], volume=exp_vol
             ).dispense(
-                a_plate[dst_well[0], dst_well[1] + i * cols],
+                a_plate[dst_well[0], (dst_well[1] + i) * cols],
                 volume=exp_vol,
             )
         protocol.eject_tips(mode=2)
@@ -481,7 +481,7 @@ def bli_plate_prep_protocol(
         if sample_plate.c_plate:
             protocol.grip_get(gator_plate_src.pop()).grip_place(c_plate)
 
-        protocol.pickup_tips(holder_tips[-rows * 2 :: 2, -cols * 2 :: 2])
+        protocol.pickup_tips(holder_tips)
         for plate in sample_plates:
             for q in [(0, 1), (1, 0), (1, 1)]:
                 for _ in range(dilution_dispense_cycles):
