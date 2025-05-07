@@ -26,7 +26,7 @@ target-version = "py313"
 
 [tool.ruff.lint]
 # select = ["ALL"]
-ignore = ["E501", "TID", "COM", "C90", "FBT"]
+ignore = ["E501", "TID", "COM", "C90", "FBT", "F841"]
 fixable = ["ALL"]
 
 [tool.ruff.lint.pydocstyle]
