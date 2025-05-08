@@ -17,3 +17,4 @@ digest*
 
 # hamilton
 *.res
+**/.claude/settings.local.json
