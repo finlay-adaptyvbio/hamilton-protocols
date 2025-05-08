@@ -2,7 +2,7 @@ import math
 from pathlib import Path
 
 from adaptyv_lab import Protocol
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from hamilton_protocols import LAYOUTS_PATH
 from hamilton_protocols.utils import alpha_to_index, get_volume_per_channel
@@ -108,6 +108,23 @@ class LoadingPlateParams(BaseModel):
         """Volume of dilution buffer to add to each well in μL."""
         return self.well_volume - self.expression_volume
 
+    @model_validator(mode="after")
+    def validate_wells(self):
+        """Check that source & destination well don't conflict with plate size."""
+        src_row, src_col = alpha_to_index(self.source_well)
+        dst_row, dst_col = alpha_to_index(self.destination_well)
+        if src_col + self.columns * 2 > 24 or src_row + self.rows * 2 > 16:
+            print(src_col, self.columns, src_row, self.rows)
+            raise ValueError(
+                f"Source well {self.source_well} exceeds plate dimensions."
+            )
+        if dst_col + self.columns * 2 > 24 or dst_row + self.rows * 2 > 16:
+            print(dst_col, self.columns, dst_row, self.rows)
+            raise ValueError(
+                f"Destination well {self.destination_well} exceeds plate dimensions."
+            )
+        return self
+
     class Config:
         title = "Loading Plate Configuration"
 
@@ -180,6 +197,15 @@ class SamplePlateParams(BaseModel):
         title="Concentrations",
     )
 
+    @model_validator(mode="after")
+    def validate_samples(self):
+        """Check that the number of samples doesn't exceed the plate size."""
+        rows = sum(sample.rows for sample in self.samples)
+        if rows > 8:
+            raise ValueError("Total number of rows exceeds 8.")
+
+        return self
+
     @property
     def c_plate(self) -> bool:
         """Check if the sample preparation requires a C plate."""
@@ -189,8 +215,6 @@ class SamplePlateParams(BaseModel):
     def rows(self) -> int:
         """Total number of rows in the sample plate."""
         rows = sum(sample.rows for sample in self.samples)
-        if rows > 8:
-            raise ValueError("Total number of rows exceeds 8.")
         return rows
 
     class Config:
@@ -230,6 +254,8 @@ def max_plate_protocol(
 
     This protocol sets up plates containing buffer and regeneration solution for
     the biosensor tips.
+
+    @tag: BLI
     """
     plates = params.plates
 
@@ -322,6 +348,8 @@ def bli_plate_prep_protocol(
 
     This protocol chains together the preparation of loading plates and
     sample plates for BLI experiments.
+
+    @tag: BLI
     """
     protocol = Protocol.from_layout(
         name="BLI Plate Prep Protocol",
