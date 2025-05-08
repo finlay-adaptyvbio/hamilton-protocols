@@ -90,6 +90,18 @@ class LoadingPlateParams(BaseModel):
         pattern="^[KL]$",
         title="Dilution Buffer",
     )
+    expression_volume: float = Field(
+        default=6.0,
+        ge=1.0,
+        le=10.0,
+        description="Volume of expressed proteins",
+        title="Expression Volume (μL)",
+    )
+    diluted: bool = Field(
+        default=True,
+        description="Whether the expression plate is already diluted",
+        title="Diluted",
+    )
     well_volume: float = Field(
         default=80.0,
         ge=40.0,
@@ -99,14 +111,14 @@ class LoadingPlateParams(BaseModel):
     )
 
     @property
-    def expression_volume(self) -> float:
-        """Volume of expression to add to each well in μL."""
+    def diluted_expression_volume(self) -> float:
+        """Volume of diluted expression to add to each well in μL."""
         return self.well_volume / (self.final_df / self.expression_df)
 
     @property
     def dilution_volume(self) -> float:
         """Volume of dilution buffer to add to each well in μL."""
-        return self.well_volume - self.expression_volume
+        return self.well_volume - self.diluted_expression_volume
 
     @model_validator(mode="after")
     def validate_wells(self):
@@ -262,22 +274,22 @@ def max_plate_protocol(
     if not protocol:
         protocol = Protocol.from_layout(
             name="MAX Plate Protocol",
-            layout_file=LAYOUTS_PATH / Path("bli.lay"),
+            layout_file=LAYOUTS_PATH / Path("max.lay"),
             simulator_mode=simulate,
         )
     if not protocol.deck:
-        msg = "Deck layout not loaded. Check that layouts/bli.lay exists."
+        msg = "Deck layout not loaded. Check that layouts/max.lay exists."
         raise ValueError(msg)
 
-    max_plates_src = protocol.deck.get_plate_stack("F4")
-    max_plates_dst = protocol.deck.get_plate_stack("F3")
+    max_plates_src = protocol.deck.get_plate_stack("F1")[: len(plates)][::-1]
+    max_plates_dst = protocol.deck.get_plate_stack("F2")[: len(plates)]
     max_plate = protocol.deck.get_plate("E4")
-    loading_buffer = protocol.deck.get_reservoir("B3")
+    k_buffer = protocol.deck.get_reservoir("B3")
     regeneration_buffer = protocol.deck.get_reservoir("B1")
     holder_tips = protocol.deck.get_tip_rack("A4")
     buffer_tips = protocol.deck.get_tip_rack("A3")
     hv_tips = protocol.deck.get_tip_rack("E3")
-    regen_tips = hv_tips[:4:2, -1]
+    regen_tips = hv_tips[:4:2, 0]
 
     if not all(
         tip is not None for tip in [buffer_tips.tip, regen_tips.tip, holder_tips.tip]
@@ -288,10 +300,10 @@ def max_plate_protocol(
     protocol.initialize()
     protocol.pickup_tips(buffer_tips).eject_tips(holder_tips)
 
-    for i in range(len(plates)):
-        probe_columns = plates[i].columns
-        probe_rows = plates[i].rows
-        well_volume = plates[i].well_volume
+    for plate in plates:
+        probe_columns = plate.columns
+        probe_rows = plate.rows
+        well_volume = plate.well_volume
         buffer_dispense_cycles = math.ceil(well_volume / buffer_tips.tip.max_volume)
         buffer_volume = well_volume / buffer_dispense_cycles
         regen_aspirate_volume = get_volume_per_channel(
@@ -301,13 +313,13 @@ def max_plate_protocol(
             volume_per_well=well_volume,
         )
 
-        protocol.grip_get(max_plates_src[::-1][i], grip_width=81.5)
+        protocol.grip_get(max_plates_src.pop(), grip_width=81.5)
         protocol.grip_place(max_plate)
 
         protocol.pickup_tips(holder_tips)
         for _ in range(buffer_dispense_cycles):
             protocol.aspirate(
-                loading_buffer,
+                k_buffer,
                 volume=buffer_volume,
             ).dispense(
                 max_plate,
@@ -324,13 +336,13 @@ def max_plate_protocol(
                 row_end = min(row + 5, probe_rows)
                 step = 4
                 protocol.dispense(
-                    max_plate[row:row_end:step, col],
+                    max_plate[row:row_end:step, col + col * 2],
                     volume=well_volume,
                 )
         protocol.eject_tips(regen_tips)
 
         protocol.grip_get(max_plate, grip_width=81.5, grip_height=12.0).grip_place(
-            max_plates_dst[i]
+            max_plates_dst.pop()
         )
 
     protocol.pickup_tips(regen_tips).eject_tips(mode=1)
@@ -406,6 +418,7 @@ def bli_plate_prep_protocol(
     # reservoirs
     l_buffer = protocol.deck.get_reservoir("B4")
     k_buffer = protocol.deck.get_reservoir("B3")
+    d_buffer = protocol.deck.get_reservoir("B2")
 
     # carriers
     tube_carrier = protocol.deck.get_tube_carrier("C1")
@@ -421,10 +434,10 @@ def bli_plate_prep_protocol(
         replicates = loading_plate.replicates
         well_vol = loading_plate.well_volume
         dil_volume = loading_plate.dilution_volume
+        dil_exp_vol = loading_plate.expression_volume
+        dilute_expression = loading_plate.diluted
         exp_vol = loading_plate.expression_volume
-        well_vol = loading_plate.well_volume
-        dil_volume = loading_plate.dilution_volume
-        exp_vol = loading_plate.expression_volume
+        exp_df = loading_plate.expression_df
 
         match loading_plate.dilution_buffer:
             case "K":
@@ -464,15 +477,23 @@ def bli_plate_prep_protocol(
         protocol.grip_get(loading_tips_src.pop()).grip_place(loading_tips)
         protocol.grip_get(expression_plate_src.pop()).grip_place(expression_plate)
 
-        protocol.pickup_tips(loading_tips)
+        protocol.pickup_tips(loading_tips).eject_tips(holder_tips)
+        protocol.pickup_tips(holder_tips[-rows * 2 :: 2, -cols * 2 :: 2])
+
+        if dilute_expression:
+            protocol.aspirate(
+                expression_plate[src_well[0], src_well[1]], volume=exp_vol * exp_df
+            ).dispense(
+                a_plate[dst_well[0], dst_well[1] * cols], volume=exp_vol * exp_df
+            )
         for i in range(replicates):
             protocol.aspirate(
-                expression_plate[src_well[0], src_well[1]], volume=exp_vol
+                expression_plate[src_well[0], src_well[1]], volume=dil_exp_vol
             ).dispense(
                 a_plate[dst_well[0], (dst_well[1] + i) * cols],
-                volume=exp_vol,
+                volume=dil_exp_vol,
             )
-        protocol.eject_tips(mode=2)
+        protocol.eject_tips(mode=1).pickup_tips(holder_tips).eject_tips(loading_tips)
 
         protocol.grip_get(loading_tips).grip_place(loading_tips, waste=True)
         protocol.grip_get(a_plate).grip_place(gator_plate_dst.pop())
@@ -623,6 +644,8 @@ def bli_plate_prep_protocol(
 
             protocol.eject_tips(mode=1)
 
+            protocol.pickup_tips(sample_tips).eject_tips(holder_tips)
+
             protocol.pickup_tips(
                 holder_tips[-rows * 2 :: 2, -(cols * (i + 1)) * 2 :: 2]
             )
@@ -639,5 +662,10 @@ def bli_plate_prep_protocol(
                 )
             protocol.aspirate(wells[-1], volume=transfer_vol)
             protocol.eject_tips(mode=2)
+
+            protocol.pickup_tips(holder_tips).eject_tips(sample_tips)
+            protocol.grip_get(sample_plates[0]).grip_place(gator_plate_dst.pop())
+            if sample_plate.c_plate:
+                protocol.grip_get(sample_plates[1]).grip_place(gator_plate_dst.pop())
 
     return protocol
