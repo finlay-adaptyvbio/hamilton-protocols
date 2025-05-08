@@ -426,7 +426,7 @@ def bli_plate_prep_protocol(
                 )
         protocol.eject_tips(mode=1)
 
-        protocol.pickup_tips(holder_tips[-rows * 2 :: 2, -cols * 2 :: 2])
+        protocol.pickup_tips(holder_tips)
         for _ in range(dilution_dispense_cycles):
             protocol.aspirate(buffer, volume=dil_well_vol).dispense(
                 a_plate, volume=dil_well_vol
@@ -570,11 +570,17 @@ def bli_plate_prep_protocol(
             tip_vol = 0
             protocol.pickup_tips(tip)
             for w_idx, well in enumerate(wells):
-                asp_vol = min(
-                    hv_tips.tip.max_volume,
-                    (math.floor(hv_tips.tip.max_volume / init_conc_vol) + 1)
-                    * init_conc_vol,
-                    (len(wells) - w_idx) * init_conc_vol,
+                asp_vol = (
+                    round(
+                        min(
+                            hv_tips.tip.max_volume,
+                            (math.floor(hv_tips.tip.max_volume / init_conc_vol) + 1)
+                            * init_conc_vol,
+                            (len(wells) - w_idx) * init_conc_vol,
+                        )
+                        / 10
+                    )
+                    * 10
                 )
 
                 if tip_vol < init_conc_vol * 2:
@@ -589,7 +595,9 @@ def bli_plate_prep_protocol(
 
             protocol.eject_tips(mode=1)
 
-            protocol.pickup_tips(holder_tips[-rows * 2 :: 2, -cols * 2 :: 2])
+            protocol.pickup_tips(
+                holder_tips[-rows * 2 :: 2, -(cols * (i + 1)) * 2 :: 2]
+            )
             wells = sample_plates[0][
                 row_offset * 2, : cols * 2 * n_conc : cols * 2
             ].to_list()
