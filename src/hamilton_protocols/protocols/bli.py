@@ -37,9 +37,8 @@ class MaxPlateProtocolParams(BaseModel):
     """Parameters for the MAX plate preparation protocol."""
 
     plates: list[MaxPlateParams] = Field(
-        default_factory=lambda: [MaxPlateParams()],
+        default_factory=lambda: [],
         description="List of MAX plate configurations",
-        min_length=1,
         max_length=4,
         title="MAX Plates",
     )
@@ -241,13 +240,13 @@ class BLIPlatePrepParams(BaseModel):
     """
 
     loading_plates: list[LoadingPlateParams] = Field(
-        default_factory=lambda: [LoadingPlateParams()],
+        default_factory=lambda: [],
         max_length=4,
         description="List of loading plate configurations. These plates contain the protein samples to be loaded onto the biosensors.",
         title="Loading Plates",
     )
     sample_plates: list[SamplePlateParams] = Field(
-        default_factory=lambda: [SamplePlateParams()],
+        default_factory=lambda: [],
         max_length=4,
         description="List of sample plate configurations. These plates contain the analyte samples at different concentrations.",
         title="Sample Plates",
