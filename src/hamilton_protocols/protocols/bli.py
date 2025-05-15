@@ -529,7 +529,6 @@ def bli_plate_prep_protocol(
         cols = sample_plate.columns
         rows = sample_plate.rows
         n_conc = sample_plate.concentrations
-        sample_plates = [b_plate, c_plate] if sample_plate.c_plate else [b_plate]
 
         match sample_plate.dilution_buffer:
             case "K":
@@ -580,7 +579,7 @@ def bli_plate_prep_protocol(
                     row_offset * 2 : (rows + row_offset) * 2 : 2,
                     cols * 2 :: 2,
                 ],
-                tips=holder_tips[-rows * 2 :: 2, cols::2],
+                tips=holder_tips[-rows * 2 :: 2, cols * 2 :: 2],
                 volume=sample_vol,
             )
             if sample_plate.c_plate:
@@ -598,7 +597,7 @@ def bli_plate_prep_protocol(
                 source=tube_carrier[j + tip_offset, 0],
                 destination=b_plate[
                     row_offset * 2 : (rows + row_offset) * 2 : 2,
-                    cols * 2 :: 2,
+                    : cols * 2 : 2,
                 ],
                 tips=hv_tips[j + tip_offset, 0],
                 volume=init_conc_vol,
@@ -610,11 +609,9 @@ def bli_plate_prep_protocol(
             protocol.pickup_tips(
                 holder_tips[-rows * 2 :: 2, -(cols * (i + 1)) * 2 :: 2]
             )
-            wells = sample_plates[0][
-                row_offset * 2, : cols * 2 * n_conc : cols * 2
-            ].to_list()
+            wells = b_plate[row_offset * 2, : cols * 2 * n_conc : cols * 2].to_list()
             if sample_plate.c_plate:
-                wells += sample_plates[1][
+                wells += c_plate[
                     row_offset * 2, : (n_conc - len(wells)) * cols * 2 : cols * 2
                 ].to_list()
 
@@ -626,8 +623,8 @@ def bli_plate_prep_protocol(
             protocol.eject_tips(mode=2)
 
             protocol.pickup_tips(holder_tips).eject_tips(sample_tips)
-            protocol.grip_get(sample_plates[0]).grip_place(gator_plate_dst.pop())
+            protocol.grip_get(b_plate).grip_place(gator_plate_dst.pop())
             if sample_plate.c_plate:
-                protocol.grip_get(sample_plates[1]).grip_place(gator_plate_dst.pop())
+                protocol.grip_get(c_plate).grip_place(gator_plate_dst.pop())
 
     return protocol
