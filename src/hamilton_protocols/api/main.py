@@ -89,11 +89,18 @@ async def run_protocol(protocol_id: str, request: RunProtocolRequest):
             # Create protocol instance
             protocol = info.func(params=params_instance, simulate=request.simulate)
 
-            # Send initial metadata
-            yield json.dumps({
-                "type": "metadata",
-                "command_count": len(protocol.commands)
-            }) + "\n"
+            # Send initial metadata including deck layout
+            deck_layout = protocol.deck.to_json() if protocol.deck else None
+            yield (
+                json.dumps(
+                    {
+                        "type": "metadata",
+                        "command_count": len(protocol.commands),
+                        "deck_layout": deck_layout,
+                    }
+                )
+                + "\n"
+            )
 
             # Stream results as they become available
             async for result in protocol.run():
@@ -101,22 +108,19 @@ async def run_protocol(protocol_id: str, request: RunProtocolRequest):
                     "type": "result",
                     "status": result.status,
                     "errors": [str(e) for e in result.errors],
-                    "data": result.data
+                    "data": result.data,
                 }
                 yield json.dumps(formatted_result) + "\n"
-                
+
             # Send completion message
             yield json.dumps({"type": "complete", "status": "success"}) + "\n"
-            
+
         except Exception as e:
             print(format_exc())
             error_msg = {"type": "error", "detail": str(e)}
             yield json.dumps(error_msg) + "\n"
 
-    return StreamingResponse(
-        stream_results(),
-        media_type="application/x-ndjson"
-    )
+    return StreamingResponse(stream_results(), media_type="application/x-ndjson")
 
 
 if __name__ == "__main__":

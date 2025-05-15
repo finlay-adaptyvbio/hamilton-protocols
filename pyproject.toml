@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "library for Hamilton protocols"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["adaptyv-lab", "fastapi[standard]>=0.115.12"]
+dependencies = [
+    "adaptyv-lab",
+    "fastapi[standard]>=0.115.12",
+]
 
 [tool.uv.sources]
 adaptyv-lab = { git = "https://github.com/adaptyvbio/adaptyv-lab.git" }
