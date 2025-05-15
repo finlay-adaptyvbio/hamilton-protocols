@@ -550,7 +550,9 @@ def bli_plate_prep_protocol(
             transfer_vol = sample.transfer_volume
             init_conc_vol = sample.initial_conc_volume
             sample_vol = sample.volume
+
             row_offset = sum(samples[k].rows for k in range(j))
+            col_offset = sum(sample_plate_params[k].columns for k in range(i))
             tip_offset = sum(len(sample_plate_params[k].samples) for k in range(i))
 
             protocol.transfer(
@@ -587,7 +589,9 @@ def bli_plate_prep_protocol(
             protocol.pickup_tips(sample_tips).eject_tips(holder_tips)
 
             protocol.pickup_tips(
-                holder_tips[-rows * 2 :: 2, -(cols * (i + 1)) * 2 :: 2]
+                holder_tips[
+                    -(rows + row_offset) * 2 :: 2, -(cols + col_offset) * 2 :: 2
+                ]
             )
             wells = b_plate[row_offset * 2, : cols * 2 * n_conc : cols * 2].to_list()
             if sample_plate.c_plate:
@@ -603,8 +607,8 @@ def bli_plate_prep_protocol(
             protocol.eject_tips(mode=2)
 
             protocol.pickup_tips(holder_tips).eject_tips(sample_tips)
-            protocol.grip_get(b_plate).grip_place(gator_plate_dst.pop())
-            if sample_plate.c_plate:
-                protocol.grip_get(c_plate).grip_place(gator_plate_dst.pop())
+        protocol.grip_get(b_plate).grip_place(gator_plate_dst.pop())
+        if sample_plate.c_plate:
+            protocol.grip_get(c_plate).grip_place(gator_plate_dst.pop())
 
     return protocol
