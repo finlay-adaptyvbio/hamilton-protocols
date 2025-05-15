@@ -5,7 +5,7 @@ from adaptyv_lab import Protocol
 from pydantic import BaseModel, Field, model_validator
 
 from hamilton_protocols import LAYOUTS_PATH
-from hamilton_protocols.utils import alpha_to_index, get_volume_per_channel
+from hamilton_protocols.utils import alpha_to_index
 
 
 class MaxPlateParams(BaseModel):
@@ -58,7 +58,7 @@ class MaxPlateProtocolParams(BaseModel):
     """Parameters for the MAX plate preparation protocol."""
 
     plates: list[MaxPlateParams] = Field(
-        default_factory=lambda: [],
+        default_factory=list,
         description="List of MAX plate configurations",
         max_length=4,
         title="MAX Plates",
@@ -263,13 +263,13 @@ class BLIPlatePrepParams(BaseModel):
     """
 
     loading_plates: list[LoadingPlateParams] = Field(
-        default_factory=lambda: [],
+        default_factory=list,
         max_length=4,
         description="List of loading plate configurations. These plates contain the protein samples to be loaded onto the biosensors.",
         title="Loading Plates",
     )
     sample_plates: list[SamplePlateParams] = Field(
-        default_factory=lambda: [],
+        default_factory=list,
         max_length=4,
         description="List of sample plate configurations. These plates contain the analyte samples at different concentrations.",
         title="Sample Plates",
