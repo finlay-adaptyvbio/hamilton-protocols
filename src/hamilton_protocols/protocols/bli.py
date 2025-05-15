@@ -310,13 +310,13 @@ def max_plate_protocol(
     regeneration_buffer = protocol.deck.get_reservoir("B1")
     holder_tips = protocol.deck.get_tip_rack("A4")
     buffer_tips = protocol.deck.get_tip_rack("A3")
-    hv_tips = protocol.deck.get_tip_rack("E3")
-    regen_tips = hv_tips[:4:2, 0]
+    hv_tips = protocol.deck.get_tip_rack("E2")
+    regen_tips = hv_tips[::2, 0]
 
     if not all(
         tip is not None for tip in [buffer_tips.tip, regen_tips.tip, holder_tips.tip]
     ):
-        msg = "Tips not loaded. Check that A3, E3, and A4 are tip racks."
+        msg = "Tips not loaded. Check that A3, E2, and A4 are tip racks."
         raise ValueError(msg)
 
     protocol.initialize()
@@ -326,46 +326,26 @@ def max_plate_protocol(
         probe_columns = plate.columns
         probe_rows = plate.rows
         well_volume = plate.well_volume
-        buffer_dispense_cycles = math.ceil(well_volume / buffer_tips.tip.max_volume)
-        buffer_volume = well_volume / buffer_dispense_cycles
-        regen_aspirate_volume = get_volume_per_channel(
-            wells=probe_rows,
-            num_channels=2,
-            max_volume=regen_tips.tip.max_volume,
-            volume_per_well=well_volume,
+
+        protocol.grip_get(max_plates_src.pop(), grip_width=81.5).grip_place(max_plate)
+
+        protocol.transfer(
+            source=k_buffer,
+            destination=max_plate[: probe_rows * 2 : 2, : probe_columns * 2 : 2],
+            tips=holder_tips[-probe_rows * 2 :: 2, -probe_columns * 2 :: 2],
+            volume=well_volume,
         )
-
-        protocol.grip_get(max_plates_src.pop(), grip_width=81.5)
-        protocol.grip_place(max_plate)
-
-        protocol.pickup_tips(holder_tips)
-        for _ in range(buffer_dispense_cycles):
-            protocol.aspirate(
-                k_buffer,
-                volume=buffer_volume,
-            ).dispense(
-                max_plate,
-                volume=buffer_volume,
-            )
-        protocol.eject_tips(mode=1)
 
         protocol.pickup_tips(regen_tips)
         for col in range(probe_columns):
-            protocol.aspirate(
-                regeneration_buffer[:4:2, -1], volume=regen_aspirate_volume
-            )
-            for row in range(math.ceil(probe_rows / 2)):
-                row_end = min(row + 5, probe_rows)
-                step = 4
+            for row in range(probe_rows // 4):
+                protocol.aspirate(regeneration_buffer[::4, -1], volume=well_volume)
                 protocol.dispense(
-                    max_plate[row:row_end:step, col + col * 2],
-                    volume=well_volume,
+                    max_plate[row::2, probe_columns * 2 + col], volume=well_volume
                 )
         protocol.eject_tips(regen_tips)
 
-        protocol.grip_get(max_plate, grip_width=81.5, grip_height=12.0).grip_place(
-            max_plates_dst.pop()
-        )
+        protocol.grip_get(max_plate, grip_width=81.5).grip_place(max_plates_dst.pop())
 
     protocol.pickup_tips(regen_tips).eject_tips(mode=1)
     protocol.pickup_tips(holder_tips).eject_tips(buffer_tips)
