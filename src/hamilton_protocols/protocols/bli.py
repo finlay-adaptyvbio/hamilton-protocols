@@ -345,7 +345,9 @@ def max_plate_protocol(
                 )
         protocol.eject_tips(regen_tips)
 
-        protocol.grip_get(max_plate, grip_width=81.5).grip_place(max_plates_dst.pop())
+        protocol.grip_get(max_plate, grip_width=81.5).grip_place(
+            max_plates_dst.pop(), eject_tool=1
+        )
 
     protocol.pickup_tips(regen_tips).eject_tips(mode=1)
     protocol.pickup_tips(holder_tips).eject_tips(buffer_tips)
