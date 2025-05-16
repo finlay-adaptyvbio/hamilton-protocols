@@ -303,8 +303,8 @@ def max_plate_protocol(
         msg = "Deck layout not loaded. Check that layouts/max.lay exists."
         raise ValueError(msg)
 
-    max_plates_src = protocol.deck.get_plate_stack("F1")[: len(plates)][::-1]
-    max_plates_dst = protocol.deck.get_plate_stack("F2")[: len(plates)]
+    max_plates_src = protocol.deck.get_plate_stack("F1")[: len(plates)]
+    max_plates_dst = protocol.deck.get_plate_stack("F2")[: len(plates)][::-1]
     max_plate = protocol.deck.get_plate("E4")
     k_buffer = protocol.deck.get_reservoir("B3")
     regeneration_buffer = protocol.deck.get_reservoir("B1")
