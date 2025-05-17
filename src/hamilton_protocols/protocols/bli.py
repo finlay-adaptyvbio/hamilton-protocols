@@ -332,7 +332,7 @@ def max_plate_protocol(
         protocol.transfer(
             source=k_buffer,
             destination=max_plate[: probe_rows * 2 : 2, : probe_columns * 2 : 2],
-            tips=holder_tips[-probe_rows * 2 :: 2, -probe_columns * 2 :: 2],
+            tips=holder_tips[-probe_rows * 2 :: 2, -probe_columns * 2 * 2 :: 2],
             volume=well_volume,
         )
 
