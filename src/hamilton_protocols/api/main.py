@@ -1,11 +1,14 @@
 from traceback import format_exc
-from typing import Any
+from typing import Any, List, Dict, Callable, Optional, TypeVar, Generic
 import os
+import base64
+import io
+import pandas as pd
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 import json
 
 from ..registry import registry
@@ -15,6 +18,98 @@ from .log_analyzer import (
     analyze_all_logs,
     get_combined_analysis,
 )
+
+# Define generic type for CSV data
+T = TypeVar("T")
+
+
+class CSVData(Generic[T]):
+    """Container for parsed CSV data with validation and transformation capabilities using pandas."""
+
+    def __init__(
+        self,
+        base64_data: str,
+        transform_func: Optional[Callable[[pd.DataFrame], Any]] = None,
+        dtype: Optional[Dict] = None,
+    ):
+        self.base64_data = base64_data
+        self.df = self._decode_and_parse(dtype)
+        self.data = transform_func(self.df) if transform_func else self.df
+
+    def _decode_and_parse(self, dtype: Optional[Dict] = None) -> pd.DataFrame:
+        """Decode base64 string and parse as CSV using pandas."""
+        try:
+            # Decode base64 string
+            csv_bytes = base64.b64decode(self.base64_data)
+
+            # Parse CSV data with pandas
+            df = pd.read_csv(io.BytesIO(csv_bytes), dtype=dtype)
+            return df
+        except Exception as e:
+            raise ValueError(f"Failed to parse CSV data: {str(e)}")
+
+    def to_dict(self, orient="records"):
+        """Convert DataFrame to dictionary."""
+        return self.df.to_dict(orient=orient)
+
+    def __iter__(self):
+        # For backwards compatibility with dict-based approach
+        return iter(self.to_dict())
+
+    def __getitem__(self, key):
+        # Support both integer indexing and column access
+        if isinstance(key, int):
+            if 0 <= key < len(self.df):
+                return self.df.iloc[key].to_dict()
+            raise IndexError(
+                f"Index {key} out of bounds for CSV data with {len(self.df)} rows"
+            )
+        else:
+            return self.df[key]
+
+    def __len__(self):
+        return len(self.df)
+
+
+def validate_csv_data(v: str) -> str:
+    """
+    Pydantic V2 field_validator for CSV data fields.
+
+    Usage in Pydantic models:
+    ```
+    from pydantic import field_validator
+
+    class MyModel(BaseModel):
+        csv_data: str
+
+        # Validate that csv_data is valid base64-encoded CSV
+        @field_validator('csv_data')
+        @classmethod
+        def validate_csv(cls, v):
+            return validate_csv_data(v)
+
+        # Optional: validate required columns
+        @field_validator('csv_data')
+        @classmethod
+        def validate_columns(cls, v):
+            data = CSVData(v)
+            if len(data.df) == 0:
+                raise ValueError("CSV data contains no rows")
+
+            required_columns = ['column1', 'column2']
+            missing = [col for col in required_columns if col not in data.df.columns]
+            if missing:
+                raise ValueError(f"Missing required columns: {', '.join(missing)}")
+            return v
+    ```
+    """
+    try:
+        # Just try to parse it to validate
+        CSVData(v)
+        return v
+    except Exception as e:
+        raise ValueError(f"Invalid CSV data: {str(e)}")
+
 
 app = FastAPI(title="hamilton-runner API")
 
@@ -130,7 +225,110 @@ async def analyze_all_log_files():
 
 @app.post("/protocols/{protocol_id}/run")
 async def run_protocol(protocol_id: str, request: RunProtocolRequest):
-    """Run a protocol with given parameters and stream results in real-time."""
+    """
+    Run a protocol with given parameters and stream results in real-time.
+
+    For protocols that require CSV file input:
+    1. Convert your CSV file to a base64-encoded string on the frontend
+    2. Pass the base64 string as the value for the CSV parameter in the request
+    3. The protocol will decode and parse the CSV data automatically using pandas
+
+    CSV data handling features:
+    - Automatic type conversion (specify dtypes in get_mapping_data)
+    - Pandas DataFrame operations for filtering, sorting, and analysis
+    - Validation of required columns and data types with Pydantic V2 field_validators
+    - Easy access to both row-based and column-based data
+    - Support for multiple CSV files via nested models
+
+    Multi-CSV approach:
+    For protocols requiring multiple CSV files, you can:
+    1. Include CSV fields in nested model structures
+    2. Add a master CSV at the parent level for shared data
+    3. Add plate-specific CSV files at the child model level
+    4. Filter and join data across files using pandas operations
+
+    Validation with Pydantic V2:
+    CSV data is validated with Pydantic's field_validator decorators:
+    1. Format validation - checks that the base64 string is valid CSV data
+    2. Schema validation - checks that required columns exist
+    3. Type validation - checks that numeric columns contain valid numbers
+
+    Example model with CSV validation:
+    ```python
+    from pydantic import BaseModel, Field, field_validator
+
+    class MyParams(BaseModel):
+        csv_data: str = Field(..., description="Base64-encoded CSV data")
+
+        @field_validator('csv_data')
+        @classmethod
+        def validate_csv(cls, v):
+            # Validate format
+            try:
+                CSVData(v)
+            except Exception as e:
+                raise ValueError(f"Invalid CSV data: {str(e)}")
+            return v
+
+        @field_validator('csv_data')
+        @classmethod
+        def validate_columns(cls, v):
+            # Validate content
+            data = CSVData(v)
+            # Check required columns
+            return v
+    ```
+
+    Example request with multiple CSV files:
+    ```json
+    {
+      "params": {
+        "master_csv": "base64_encoded_master_data",
+        "plates": [
+          {
+            "plate_id": "PLATE-123",
+            "well_mapping_csv": "base64_encoded_mapping_data",
+            "concentration_csv": "base64_encoded_concentration_data"
+          },
+          {
+            "plate_id": "PLATE-456",
+            "well_mapping_csv": "base64_encoded_mapping_data_2"
+          }
+        ]
+      },
+      "simulate": false
+    }
+    ```
+
+    Example JavaScript code to encode a CSV file:
+    ```javascript
+    // Read file from input element
+    const fileInput = document.getElementById('csvFile');
+    const file = fileInput.files[0];
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        // Get file content as base64
+        const base64String = event.target.result.split(',')[1];
+
+        // Add to your params object
+        const params = {
+            plate_id: "PLATE-123",
+            csv_data: base64String
+        };
+
+        // Send the request
+        fetch(`/protocols/${protocolId}/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ params, simulate: false })
+        });
+    };
+
+    // Read file as data URL (base64)
+    reader.readAsDataURL(file);
+    ```
+    """
     # Convert ID back to protocol name
     protocol_name = protocol_id.replace("-", " ").title()
 
