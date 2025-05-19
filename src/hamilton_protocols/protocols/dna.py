@@ -229,20 +229,17 @@ def fab_mapping_protocol(
     lv_tip_idx = 0
     hv_tip_idx = 0
 
-    for i, plate_params in enumerate(plates):
-        plate_id = plate_params.plate_id
+    protocol.initialize()
 
-        # Parse CSV data
+    for plate_params in plates:
         df = plate_params.df
         df["plate"] = df["plate:well"].str.split(":").str[0]
-
         df["well"] = df["plate:well"].str.split(":").str[1]
 
         mapping = {
             plate: {well: [] for well in df[df["plate"] == plate]["well"].unique()}
             for plate in df["plate"].unique()
         }
-
         for (plate_well), group in df.groupby("plate:well"):
             destination = [
                 {"name": name, "well": dest}
@@ -306,6 +303,8 @@ def fab_mapping_protocol(
 
                 protocol.eject_tips(mode=1)
 
-    protocol.initialize()
+            protocol.grip_get(fab_plate).grip_place(fab_plates_dst.pop())
+
+        protocol.grip_get(dil_plate).grip_place(dil_plates_dst.pop())
 
     return protocol
