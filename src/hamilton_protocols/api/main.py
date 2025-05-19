@@ -1,5 +1,6 @@
 from traceback import format_exc
 from typing import Any
+import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,12 @@ from pydantic import BaseModel
 import json
 
 from ..registry import registry
+from .log_analyzer import (
+    analyze_log_file,
+    get_analysis,
+    analyze_all_logs,
+    get_combined_analysis,
+)
 
 app = FastAPI(title="hamilton-runner API")
 
@@ -69,6 +76,56 @@ async def get_protocol(protocol_id: str):
         "tags": list(info.tags),
         "params_schema": schema,
     }
+
+
+@app.get("/logs/analyze/{log_file}")
+async def analyze_log(log_file: str):
+    """Analyze command execution times from a log file."""
+    log_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "hamilton-logs"
+    )
+    log_path = os.path.join(log_dir, log_file)
+
+    if not os.path.exists(log_path):
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    try:
+        command_times = analyze_log_file(log_path)
+        if not command_times:
+            return {"error": "No command times found in log file"}
+
+        analysis = get_analysis(command_times)
+        return analysis
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/logs/analyze-all")
+async def analyze_all_log_files():
+    """Analyze all log files in the hamilton-logs directory."""
+    log_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "hamilton-logs"
+    )
+
+    if not os.path.exists(log_dir):
+        raise HTTPException(status_code=404, detail="Log directory not found")
+
+    try:
+        all_analyses = analyze_all_logs(log_dir)
+        if not all_analyses:
+            return {
+                "error": "No log files found or no command times found in any log file"
+            }
+
+        # Get individual file analyses
+        file_analyses = {file: analysis for file, analysis in all_analyses.items()}
+
+        # Get combined analysis across all files
+        combined_analysis = get_combined_analysis(all_analyses)
+
+        return {"individual_files": file_analyses, "combined": combined_analysis}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/protocols/{protocol_id}/run")
