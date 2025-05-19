@@ -91,3 +91,58 @@ def dna_reconstitution_protocol(
 
     # reservoirs
     water = protocol.deck.get_reservoir("B5")
+
+    return protocol
+
+
+class FAbMappingParams(BaseModel):
+    """Parameters for FAb mapping."""
+
+    plates: list = Field(default_factory=list, title="Twist Plates", max_length=4)
+
+
+def fab_mapping_protocol(
+    params: FAbMappingParams,
+    simulate: bool = False,
+    protocol: Protocol | None = None,
+) -> Protocol:
+    """
+    Reconstitute and normalise DNA in Twist plate(s).
+
+    @tag: DNA
+    """
+    plates = params.plates
+
+    if not protocol:
+        protocol = Protocol.from_layout(
+            name="DNA Reconstitution",
+            layout_file=LAYOUTS_PATH / Path("reconstitute.lay"),
+            simulator_mode=simulate,
+        )
+    if not protocol.deck:
+        msg = "Deck layout not loaded. Check that layouts/max.lay exists."
+        raise ValueError(msg)
+
+    # stacks
+    dil_plates_src = [
+        plate
+        for stack in ["F3", "F4"]
+        for plate in protocol.deck.get_plate_stack(stack)
+    ][: len(plates)]
+    dil_plates_dst = [
+        plate
+        for stack in ["F4", "F5"]
+        for plate in protocol.deck.get_plate_stack(stack)
+    ][: len(plates)][::-1]
+    fab_plates_src = protocol.deck.get_plate_stack("F1")[: len(plates)]
+    fab_plates_dst = protocol.deck.get_plate_stack("F2")[: len(plates)][::-1]
+
+    # plates
+    dil_plate = protocol.deck.get_plate("C3")
+    fab_plate = protocol.deck.get_plate("C2")
+
+    # tips
+    hv_tip_stack = protocol.deck.get_tip_rack_stack("E2")
+    lv_tip_stack = protocol.deck.get_tip_rack_stack("E1")
+
+    return protocol
