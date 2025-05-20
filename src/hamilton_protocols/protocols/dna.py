@@ -169,9 +169,34 @@ class FAbMappingParams(BaseModel):
     @property
     def df(self) -> pd.DataFrame:
         """Parse well mapping CSV data into a pandas DataFrame."""
-        if self.csv_data is None:
-            return None
         return CSVData(self.csv_data).df
+
+    @property
+    def mapping(self) -> dict[str, dict[str, list[dict[str, str]]]]:
+        """Parse well mapping CSV data into a dictionary."""
+        df = self.df
+        df["plate"] = df["plate:well"].str.split(":").str[0]
+        df["well"] = df["plate:well"].str.split(":").str[1]
+        mapping = {
+            plate: {well: [] for well in df[df["plate"] == plate]["well"].unique()}
+            for plate in df["plate"].unique()
+        }
+        for (plate_well), group in df.groupby("plate:well"):
+            destination = [
+                {"name": name, "well": dest}
+                for name, dest in zip(
+                    group["name"].tolist(), group["destination"].tolist()
+                )
+            ]
+            mapping[plate_well.split(":")[0]][plate_well.split(":")[1]].extend(
+                destination
+            )
+        return mapping
+
+    @property
+    def dil_plates(self) -> List[str]:
+        """Get the list of dilution plates from the mapping."""
+        return list(self.mapping.keys())
 
 
 class FAbMappingProtocolParams(BaseModel):
@@ -204,19 +229,22 @@ def fab_mapping_protocol(
         msg = "Deck layout not loaded. Check that layouts/fab-map.lay exists."
         raise ValueError(msg)
 
+    n_dil_plates = sum(len(plate.dil_plates) for plate in plates)
+    n_fab_plates = len(plates)
+
     # stacks
     dil_plates_src = [
         plate
         for stack in ["F3", "F4"]
         for plate in protocol.deck.get_plate_stack(stack)
-    ][: len(plates)]
+    ][:n_dil_plates]
     dil_plates_dst = [
         plate
         for stack in ["F4", "F5"]
         for plate in protocol.deck.get_plate_stack(stack)
-    ][: len(plates)][::-1]
-    fab_plates_src = protocol.deck.get_plate_stack("F1")[: len(plates)]
-    fab_plates_dst = protocol.deck.get_plate_stack("F2")[: len(plates)][::-1]
+    ][:n_dil_plates][::-1]
+    fab_plates_src = protocol.deck.get_plate_stack("F1")[:n_fab_plates]
+    fab_plates_dst = protocol.deck.get_plate_stack("F2")[:n_fab_plates][::-1]
 
     # plates
     dil_plate = protocol.deck.get_plate("C3")
@@ -232,79 +260,66 @@ def fab_mapping_protocol(
     protocol.initialize()
 
     for plate_params in plates:
-        df = plate_params.df
-        df["plate"] = df["plate:well"].str.split(":").str[0]
-        df["well"] = df["plate:well"].str.split(":").str[1]
-
-        mapping = {
-            plate: {well: [] for well in df[df["plate"] == plate]["well"].unique()}
-            for plate in df["plate"].unique()
-        }
-        for (plate_well), group in df.groupby("plate:well"):
-            destination = [
-                {"name": name, "well": dest}
-                for name, dest in zip(
-                    group["name"].tolist(), group["destination"].tolist()
-                )
-            ]
-            mapping[plate_well.split(":")[0]][plate_well.split(":")[1]].extend(
-                destination
-            )
-
-        protocol.grip_get(dil_plates_src.pop()).grip_place(dil_plate)
+        mapping = plate_params.mapping
+        protocol.grip_get(fab_plates_src.pop()).grip_place(fab_plate)
 
         for src_plate in mapping:
-            protocol.grip_get(fab_plates_src.pop()).grip_place(fab_plate)
+            protocol.grip_get(dil_plates_src.pop()).grip_place(dil_plate)
             for src_well in mapping[src_plate]:
                 if lv_tip_idx > len(lv_tip_stack[-1]):
-                    protocol.grip_get(lv_tip_stack.pop()).grip_place(waste=True)
+                    protocol.grip_get(lv_tip_stack.pop()).grip_place(
+                        lv_tip_stack[-1], waste=True
+                    )
                     lv_tip_idx = 0
                 if hv_tip_idx > len(hv_tip_stack[-1]):
-                    protocol.grip_get(hv_tip_stack.pop()).grip_place(waste=True)
+                    protocol.grip_get(hv_tip_stack.pop()).grip_place(
+                        hv_tip_stack[-1], waste=True
+                    )
                     hv_tip_idx = 0
 
                 tip_vol = 0
                 n_dest = len(mapping[src_plate][src_well])
                 if lv_tip_stack[-1].tip.max_volume >= (n_dest + 1) * 5:
-                    protocol.pickup_tips(lv_tip_stack[-1][lv_tip_idx])
+                    protocol.pickup_tips(lv_tip_stack[-1].at(lv_tip_idx))
                     lv_tip_idx += 1
                 else:
-                    protocol.pickup_tips(hv_tip_stack[-1][hv_tip_idx])
+                    protocol.pickup_tips(hv_tip_stack[-1].at(hv_tip_idx))
                     hv_tip_idx += 1
 
                 for idx, dest in enumerate(mapping[src_plate][src_well]):
                     asp_vol = min(
                         hv_tip_stack[-1].tip.max_volume,
                         (math.floor(hv_tip_stack[-1].tip.max_volume / 5 + 1) * 5),
-                        5 * (n_dest - idx),
+                        5 * (n_dest - idx + 1),
                     )
                     if tip_vol < 5:
                         if tip_vol > 0:
                             protocol.dispense(
-                                fab_plate[alpha_to_index(src_well)],
+                                dil_plate[alpha_to_index(src_well)],
                                 volume=tip_vol,
                             )
                         protocol.aspirate(
-                            fab_plate[alpha_to_index(src_well)],
+                            dil_plate[alpha_to_index(src_well)],
                             volume=asp_vol,
                         )
                         tip_vol += asp_vol
 
                     protocol.dispense(
-                        dil_plate[alpha_to_index(dest["well"])],
-                        volume=tip_vol,
+                        fab_plate[alpha_to_index(dest["well"])],
+                        volume=5,
                     )
+                    tip_vol -= 5
 
                 if tip_vol > 0:
                     protocol.dispense(
-                        fab_plate[alpha_to_index(src_well)],
+                        dil_plate[alpha_to_index(src_well)],
                         volume=tip_vol,
                     )
 
                 protocol.eject_tips(mode=1)
 
-            protocol.grip_get(fab_plate).grip_place(fab_plates_dst.pop())
+            protocol.grip_get(dil_plate).grip_place(dil_plates_dst.pop())
 
-        protocol.grip_get(dil_plate).grip_place(dil_plates_dst.pop())
+        protocol.grip_get(fab_plate).grip_place(fab_plates_dst.pop())
 
     return protocol

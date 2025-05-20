@@ -1,3 +1,6 @@
+import base64
+
+
 def alpha_to_index(alpha: str) -> tuple[int, int]:
     """Convert alphanumeric well position (e.g., A1) to row, column indices."""
     try:
@@ -32,3 +35,17 @@ def get_volume_per_channel(
         volumes[i] += volume_per_well
 
     return [round(vol / 10) * 10 for vol in volumes]
+
+
+def dataframe_to_base64(df):
+    # Convert DataFrame to CSV string
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_string = csv_buffer.getvalue()
+
+    # Encode as base64
+    csv_bytes = csv_string.encode("utf-8")
+    base64_bytes = base64.b64encode(csv_bytes)
+    base64_string = base64_bytes.decode("utf-8")
+
+    return base64_string
