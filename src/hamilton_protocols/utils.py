@@ -1,4 +1,5 @@
 import base64
+import io
 
 
 def alpha_to_index(alpha: str) -> tuple[int, int]:
