@@ -232,6 +232,18 @@ def fab_mapping_protocol(
     n_dil_plates = sum(len(plate.dil_plates) for plate in plates)
     n_fab_plates = len(plates)
 
+    # well overrides
+    well_overrides = {
+        "P-DIL-0160": {
+            "A3": "C1",
+            "D3": "D1",
+            "C4": "G1",
+            "H5": "H1",
+            "D6": "A2",
+            "D8": "B2",
+        }
+    }
+
     # stacks
     dil_plates_src = [
         plate
@@ -253,6 +265,9 @@ def fab_mapping_protocol(
     # tips
     hv_tip_stack = protocol.deck.get_tip_rack_stack("E2")
     lv_tip_stack = protocol.deck.get_tip_rack_stack("E1")
+
+    # carriers
+    tube_carrier = protocol.deck.get_tube_carrier("C1")
 
     lv_tip_idx = 0
     hv_tip_idx = 0
@@ -286,6 +301,11 @@ def fab_mapping_protocol(
                     protocol.pickup_tips(hv_tip_stack[-1].at(hv_tip_idx))
                     hv_tip_idx += 1
 
+                src = dil_plate[alpha_to_index(src_well)]
+                if src_well in well_overrides[src_plate].keys():
+                    src_well = well_overrides[src_plate][src_well]
+                    src = tube_carrier[alpha_to_index(src_well)]
+
                 for idx, dest in enumerate(mapping[src_plate][src_well]):
                     asp_vol = min(
                         hv_tip_stack[-1].tip.max_volume,
@@ -294,27 +314,15 @@ def fab_mapping_protocol(
                     )
                     if tip_vol < 5:
                         if tip_vol > 0:
-                            protocol.dispense(
-                                dil_plate[alpha_to_index(src_well)],
-                                volume=tip_vol,
-                            )
-                        protocol.aspirate(
-                            dil_plate[alpha_to_index(src_well)],
-                            volume=asp_vol,
-                        )
+                            protocol.dispense(src, volume=tip_vol)
+                        protocol.aspirate(src, volume=asp_vol)
                         tip_vol += asp_vol
 
-                    protocol.dispense(
-                        fab_plate[alpha_to_index(dest["well"])],
-                        volume=5,
-                    )
+                    protocol.dispense(fab_plate[alpha_to_index(dest["well"])], volume=5)
                     tip_vol -= 5
 
                 if tip_vol > 0:
-                    protocol.dispense(
-                        dil_plate[alpha_to_index(src_well)],
-                        volume=tip_vol,
-                    )
+                    protocol.dispense(src, volume=tip_vol)
 
                 protocol.eject_tips(mode=1)
 
