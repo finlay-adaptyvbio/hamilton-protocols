@@ -1,21 +1,22 @@
-from traceback import format_exc
-from typing import Any, List, Dict, Callable, Optional, TypeVar, Generic
-import os
 import base64
 import io
-import pandas as pd
+import json
+import os
+from collections.abc import Callable
+from traceback import format_exc
+from typing import Any, Generic, TypeVar
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, field_validator
-import json
+from pydantic import BaseModel
 
 from ..registry import registry
 from .log_analyzer import (
+    analyze_all_logs,
     analyze_log_file,
     get_analysis,
-    analyze_all_logs,
     get_combined_analysis,
 )
 
@@ -29,14 +30,14 @@ class CSVData(Generic[T]):
     def __init__(
         self,
         base64_data: str,
-        transform_func: Optional[Callable[[pd.DataFrame], Any]] = None,
-        dtype: Optional[Dict] = None,
+        transform_func: Callable[[pd.DataFrame], Any] | None = None,
+        dtype: dict | None = None,
     ):
         self.base64_data = base64_data
         self.df = self._decode_and_parse(dtype)
         self.data = transform_func(self.df) if transform_func else self.df
 
-    def _decode_and_parse(self, dtype: Optional[Dict] = None) -> pd.DataFrame:
+    def _decode_and_parse(self, dtype: dict | None = None) -> pd.DataFrame:
         """Decode base64 string and parse as CSV using pandas."""
         try:
             # Decode base64 string
@@ -46,7 +47,7 @@ class CSVData(Generic[T]):
             df = pd.read_csv(io.BytesIO(csv_bytes), dtype=dtype)
             return df
         except Exception as e:
-            raise ValueError(f"Failed to parse CSV data: {str(e)}")
+            raise ValueError(f"Failed to parse CSV data: {e!s}")
 
     def to_dict(self, orient="records"):
         """Convert DataFrame to dictionary."""
@@ -64,8 +65,7 @@ class CSVData(Generic[T]):
             raise IndexError(
                 f"Index {key} out of bounds for CSV data with {len(self.df)} rows"
             )
-        else:
-            return self.df[key]
+        return self.df[key]
 
     def __len__(self):
         return len(self.df)
@@ -108,7 +108,7 @@ def validate_csv_data(v: str) -> str:
         CSVData(v)
         return v
     except Exception as e:
-        raise ValueError(f"Invalid CSV data: {str(e)}")
+        raise ValueError(f"Invalid CSV data: {e!s}")
 
 
 app = FastAPI(title="hamilton-runner API")

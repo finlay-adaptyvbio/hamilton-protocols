@@ -1,15 +1,13 @@
+import math
 from pathlib import Path
+
+import pandas as pd
 from adaptyv_lab import Protocol
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, List
-import pandas as pd
-import math
 
 from hamilton_protocols import LAYOUTS_PATH
 from hamilton_protocols.api.main import CSVData
 from hamilton_protocols.utils import alpha_to_index
-
-from adaptyv_lab.config.liquid import DispenseMode, AspirateMode
 
 
 class DNAPlateParams(BaseModel):
@@ -21,9 +19,9 @@ class DNAPlateParams(BaseModel):
     csv_data: str = Field(
         ..., description="Base64-encoded CSV containing well mapping information"
     )
-    dilute: bool = Field(False, description="Whether to dilute the samples")
-    diluted_concentration: Optional[float] = Field(
-        None, description="Concentration of diluted samples"
+    dilute: bool = Field(default=False, description="Whether to dilute the samples")
+    diluted_concentration: float | None = Field(
+        default=None, description="Concentration of diluted samples"
     )
 
     @field_validator("csv_data")
@@ -35,7 +33,7 @@ class DNAPlateParams(BaseModel):
         try:
             data = CSVData(v)
         except Exception as e:
-            raise ValueError(f"Invalid CSV data: {str(e)}")
+            raise ValueError(f"Invalid CSV data: {e!s}")
 
         required_columns = ["well", "volume"]
         missing = [col for col in required_columns if col not in data.df.columns]
@@ -53,7 +51,7 @@ class DNAPlateParams(BaseModel):
     @property
     def mapping(self) -> dict[str, float]:
         """Get well mapping as a dictionary."""
-        return dict(zip(self.df["well"], self.df["volume"]))
+        return dict(zip(self.df["well"], self.df["volume"], strict=False))
 
 
 class DNAReconstitutionParams(BaseModel):
@@ -61,7 +59,7 @@ class DNAReconstitutionParams(BaseModel):
     Parameters for DNA reconstitution with multiple plates and CSV data.
     """
 
-    plates: List[DNAPlateParams] = Field(
+    plates: list[DNAPlateParams] = Field(
         default_factory=list,
         description="List of Twist plate parameters for DNA reconstitution.",
         max_length=4,
@@ -112,7 +110,11 @@ def dna_reconstitution_protocol(
 
     protocol.initialize()
 
+    col_idx = 0
+
     for i, plate_params in enumerate(plates):
+        plate_id = plate_params.plate_id
+        print(f"Reconstituting {plate_id}")
         mapping = plate_params.mapping
         max_col = max([alpha_to_index(well)[1] for well in mapping.keys()]) + 1
 
@@ -120,8 +122,13 @@ def dna_reconstitution_protocol(
         # protocol.grip_get(dil_plates_src.pop()).grip_place(dil_plate)
 
         for col in range(max_col):
+            if col_idx >= rec_tips_src[-1].definition.columns:
+                protocol.grip_get(rec_tips_src.pop()).grip_place(
+                    rec_tips_src[-1], waste=True
+                )
+                col_idx = 0
             for row in range(2):
-                tips = rec_tips_src[-1][row::2, col]
+                tips = rec_tips_src[-1][row::2, col_idx]
                 plate = rec_plate[row::2, col]
                 volumes = [
                     min(mapping.get(pos.alphanumeric, 0), tips.tip.max_volume)
@@ -132,8 +139,110 @@ def dna_reconstitution_protocol(
                 protocol.dispense(plate, volume=volumes)
                 protocol.eject_tips(mode=1)
 
+            col_idx += 1
+
         protocol.grip_get(rec_plate).grip_place(rec_plates_dst.pop())
         # protocol.grip_get(dil_plate).grip_place(dil_plates_dst.pop())
+
+        # clean up
+        protocol.grip_eject()
+
+    return protocol
+
+
+class DNADilutionPlateParams(BaseModel):
+    """
+    Parameters for DNA dilution with multiple plates and CSV data.
+    """
+
+    plate_id: str = Field(..., description="ID of the plate to be diluted.")
+    source_well: str = Field(
+        default="A1", description="Source well for the dilution (e.g., A1, B2, etc.)"
+    )
+    destination_well: str = Field(
+        default="A1",
+        description="Destination well for the dilution (e.g., A1, B2, etc.)",
+    )
+    final_concentration: float = Field(
+        default=4.0, description="Final concentration of the diluted sample"
+    )
+    final_volume: float = Field(
+        default=100.0, description="Final volume of the diluted sample"
+    )
+    stock_concentration: float = Field(
+        default=100.0, description="Concentration of the stock solution"
+    )
+
+
+class DNADilutionParams(BaseModel):
+    """
+    Parameters for DNA dilution with multiple source plates per dilution plate.
+    """
+
+    plate_id: str = Field(..., description="ID of the final dilution plate.")
+    source_plates: list[DNADilutionPlateParams] = Field(
+        default_factory=list,
+        description="List of source plates for the dilution.",
+        title="Source Plates",
+    )
+
+
+class DNADilutionProtocolParams(BaseModel):
+    """
+    Parameters for DNA dilution with multiple dilution plates and source plates.
+    Each dilution plate can have multiple source plates.
+    """
+
+    plates: list[DNADilutionParams] = Field(
+        default_factory=list,
+        description="List of dilution plate parameters for DNA dilution.",
+        max_length=4,
+        title="Dilution Plates",
+    )
+
+
+def dna_dilution_protocol(
+    params: DNADilutionProtocolParams,
+    simulate: bool = False,
+    protocol: Protocol | None = None,
+) -> Protocol:
+    """
+    Dilute DNA from reconstituted plates with optional remapping of wells.
+
+    @tag: DNA
+    """
+    plates = params.plates
+
+    if not protocol:
+        protocol = Protocol.from_layout(
+            name="DNA Reconstitution",
+            layout_file=LAYOUTS_PATH / Path("reconstitute.lay"),
+            simulator_mode=simulate,
+        )
+    if not protocol.deck:
+        msg = "Deck layout not loaded. Check that layouts/reconstitute.lay exists."
+        raise ValueError(msg)
+
+    # stacks
+    rec_plates_src = protocol.deck.get_plate_stack("F1")[: len(plates)]
+    rec_plates_dst = protocol.deck.get_plate_stack("F3")[: len(plates)][::-1]
+    rec_tips_src = protocol.deck.get_tip_rack_stack("E1")[: len(plates)]
+    dil_plates_src = protocol.deck.get_plate_stack("F2")[: len(plates)]
+    dil_plates_dst = protocol.deck.get_plate_stack("F4")[: len(plates)][::-1]
+    dil_tips_src = protocol.deck.get_tip_rack_stack("E3")[: len(plates)]
+
+    # plates
+    rec_plate = protocol.deck.get_plate("C4")
+    dil_plate = protocol.deck.get_plate("C3")
+
+    # tips
+    holder_tips = protocol.deck.get_tip_rack("A4")
+    dil_tips = protocol.deck.get_tip_rack("D2")
+
+    # reservoirs
+    water = protocol.deck.get_reservoir("B5")
+
+    protocol.initialize()
 
     return protocol
 
@@ -155,7 +264,7 @@ class FAbMappingParams(BaseModel):
         try:
             data = CSVData(v)
         except Exception as e:
-            raise ValueError(f"Invalid CSV data: {str(e)}")
+            raise ValueError(f"Invalid CSV data: {e!s}")
 
         required_columns = ["name", "destination", "plate:well"]
         missing = [col for col in required_columns if col not in data.df.columns]
@@ -184,7 +293,7 @@ class FAbMappingParams(BaseModel):
             destination = [
                 {"name": name, "well": dest}
                 for name, dest in zip(
-                    group["name"].tolist(), group["destination"].tolist()
+                    group["name"].tolist(), group["destination"].tolist(), strict=False
                 )
             ]
             mapping[plate_well.split(":")[0]][plate_well.split(":")[1]].extend(
@@ -193,7 +302,7 @@ class FAbMappingParams(BaseModel):
         return mapping
 
     @property
-    def dil_plates(self) -> List[str]:
+    def dil_plates(self) -> list[str]:
         """Get the list of dilution plates from the mapping."""
         return list(self.mapping.keys())
 
@@ -264,14 +373,12 @@ def fab_mapping_protocol(
     fab_plate = protocol.deck.get_plate("C2")
 
     # tips
-    hv_tip_stack = protocol.deck.get_tip_rack_stack("E2")[:1]
     lv_tip_stack = protocol.deck.get_tip_rack_stack("E1")[:1]
 
     # carriers
     tube_carrier = protocol.deck.get_tube_carrier("C1")
 
     lv_tip_idx = 0
-    hv_tip_idx = 0
 
     protocol.initialize()
 
@@ -279,30 +386,24 @@ def fab_mapping_protocol(
         mapping = plate_params.mapping
         protocol.grip_get(fab_plates_src.pop()).grip_place(fab_plate)
 
+        print(sum(len(v) for v in mapping.values()))
+
         for src_plate in mapping:
             print(f"Adding chains from {src_plate}")
             protocol.grip_get(dil_plates_src.pop()).grip_place(dil_plate)
             for src_well in mapping[src_plate]:
                 print(f"  using well {src_well}")
-                if lv_tip_idx > len(lv_tip_stack[-1]):
+                if lv_tip_idx >= len(lv_tip_stack[-1]):
                     protocol.grip_get(lv_tip_stack.pop()).grip_place(
                         lv_tip_stack[-1], waste=True
                     )
+                    print("  getting new tip stack")
                     lv_tip_idx = 0
-                if hv_tip_idx > len(hv_tip_stack[-1]):
-                    protocol.grip_get(hv_tip_stack.pop()).grip_place(
-                        hv_tip_stack[-1], waste=True
-                    )
-                    hv_tip_idx = 0
 
                 tip_vol = 0
                 n_dest = len(mapping[src_plate][src_well])
-                if lv_tip_stack[-1].tip.max_volume >= n_dest * 5:
-                    protocol.pickup_tips(lv_tip_stack[-1].at(lv_tip_idx))
-                    lv_tip_idx += 1
-                else:
-                    protocol.pickup_tips(hv_tip_stack[-1].at(hv_tip_idx))
-                    hv_tip_idx += 1
+                protocol.pickup_tips(lv_tip_stack[-1].at(lv_tip_idx))
+                lv_tip_idx += 1
 
                 src = dil_plate[alpha_to_index(src_well)]
                 if src_well in well_overrides[src_plate].keys():
@@ -313,8 +414,8 @@ def fab_mapping_protocol(
                 for idx, dest in enumerate(mapping[src_plate][src_well]):
                     print(f"    adding {dest['name']} to {dest['well']}")
                     asp_vol = min(
-                        hv_tip_stack[-1].tip.max_volume,
-                        (math.floor(hv_tip_stack[-1].tip.max_volume / 5) * 5),
+                        lv_tip_stack[-1].tip.max_volume,
+                        (math.floor(lv_tip_stack[-1].tip.max_volume / 5) * 5),
                         5 * (n_dest - idx),
                     )
                     if tip_vol < 5:

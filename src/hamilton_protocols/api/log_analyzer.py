@@ -1,8 +1,7 @@
-from datetime import datetime
-from collections import defaultdict
 import json
 import os
-from typing import Dict, List
+from collections import defaultdict
+from datetime import datetime
 
 
 def parse_timestamp(line: str) -> datetime:
@@ -20,11 +19,11 @@ def extract_command_type(line: str) -> str:
                 data = json.loads(content)
                 return data.get("command", "unknown")
         except Exception as e:
-            print(f"Error parsing command type: {str(e)}")
+            print(f"Error parsing command type: {e!s}")
     return None
 
 
-def analyze_log_file(file_path: str) -> Dict[str, List[float]]:
+def analyze_log_file(file_path: str) -> dict[str, list[float]]:
     """Analyze log file and return command execution times."""
     command_times = defaultdict(list)
     current_command = None
@@ -35,7 +34,7 @@ def analyze_log_file(file_path: str) -> Dict[str, List[float]]:
 
     for encoding in encodings:
         try:
-            with open(file_path, "r", encoding=encoding) as f:
+            with open(file_path, encoding=encoding) as f:
                 for line in f:
                     # Look for GET request that starts a command
                     if "HttpGET - progress" in line and "Response Content:" in line:
@@ -57,13 +56,13 @@ def analyze_log_file(file_path: str) -> Dict[str, List[float]]:
         except UnicodeDecodeError:
             continue
         except Exception as e:
-            print(f"Error reading file with {encoding} encoding: {str(e)}")
+            print(f"Error reading file with {encoding} encoding: {e!s}")
             continue
 
     return command_times
 
 
-def get_analysis(command_times: Dict[str, List[float]]) -> Dict[str, Dict[str, float]]:
+def get_analysis(command_times: dict[str, list[float]]) -> dict[str, dict[str, float]]:
     """Get analysis of command execution times as a dictionary."""
     analysis = {}
 
@@ -80,7 +79,7 @@ def get_analysis(command_times: Dict[str, List[float]]) -> Dict[str, Dict[str, f
     return analysis
 
 
-def analyze_all_logs(log_dir: str) -> Dict[str, Dict[str, Dict[str, float]]]:
+def analyze_all_logs(log_dir: str) -> dict[str, dict[str, dict[str, float]]]:
     """Analyze all .trc files in a directory and return combined analysis."""
     all_analyses = {}
 
@@ -95,14 +94,14 @@ def analyze_all_logs(log_dir: str) -> Dict[str, Dict[str, Dict[str, float]]]:
                 analysis = get_analysis(command_times)
                 all_analyses[log_file] = analysis
         except Exception as e:
-            print(f"Error analyzing {log_file}: {str(e)}")
+            print(f"Error analyzing {log_file}: {e!s}")
 
     return all_analyses
 
 
 def get_combined_analysis(
-    all_analyses: Dict[str, Dict[str, Dict[str, float]]],
-) -> Dict[str, Dict[str, float]]:
+    all_analyses: dict[str, dict[str, dict[str, float]]],
+) -> dict[str, dict[str, float]]:
     """Combine analyses from multiple log files into a single analysis."""
     combined = defaultdict(lambda: {"count": 0, "total_time": 0, "times": []})
 

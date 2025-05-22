@@ -113,7 +113,7 @@ class LoadingPlateParams(BaseModel):
     expression_volume: float = Field(
         default=6.0,
         ge=1.0,
-        le=10.0,
+        le=12.0,
         description="Volume of expressed proteins",
         title="Expression Volume (μL)",
     )
@@ -243,7 +243,7 @@ class SamplePlateParams(BaseModel):
     @property
     def c_plate(self) -> bool:
         """Check if the sample preparation requires a C plate."""
-        return (self.concentrations + 1) * self.columns > 12
+        return self.columns >= 4
 
     @property
     def rows(self) -> int:
@@ -345,9 +345,7 @@ def max_plate_protocol(
                 )
         protocol.eject_tips(regen_tips)
 
-        protocol.grip_get(max_plate, grip_width=81.5).grip_place(
-            max_plates_dst.pop(), eject_tool=1
-        )
+        protocol.grip_get(max_plate, grip_width=81.5).grip_place(max_plates_dst.pop())
 
     protocol.pickup_tips(regen_tips).eject_tips(mode=1)
     protocol.pickup_tips(holder_tips).eject_tips(buffer_tips)
@@ -477,6 +475,7 @@ def bli_plate_prep_protocol(
 
         protocol.pickup_tips(loading_tips).eject_tips(holder_tips)
         if not loading_plate.diluted:
+            # TODO: allow diluting > 12 uL of expression
             protocol.transfer(
                 source=d_buffer,
                 destination=exp_plate[
@@ -612,5 +611,8 @@ def bli_plate_prep_protocol(
         protocol.grip_get(b_plate).grip_place(gator_plate_dst.pop())
         if sample_plate.c_plate:
             protocol.grip_get(c_plate).grip_place(gator_plate_dst.pop())
+
+    # clean up
+    protocol.grip_eject()
 
     return protocol
