@@ -150,7 +150,7 @@ def dna_reconstitution_protocol(
     return protocol
 
 
-class DNADilutionPlateParams(BaseModel):
+class DNADilutionSourcePlateParams(BaseModel):
     """
     Parameters for DNA dilution with multiple plates and CSV data.
     """
@@ -163,6 +163,12 @@ class DNADilutionPlateParams(BaseModel):
         default="A1",
         description="Destination well for the dilution (e.g., A1, B2, etc.)",
     )
+    rows: int = Field(
+        default=8, ge=1, le=8, description="Number of rows to be diluted (1-8)."
+    )
+    cols: int = Field(
+        default=12, ge=1, le=12, description="Number of columns to be diluted (1-12)."
+    )
     final_concentration: float = Field(
         default=4.0, description="Final concentration of the diluted sample"
     )
@@ -174,13 +180,13 @@ class DNADilutionPlateParams(BaseModel):
     )
 
 
-class DNADilutionParams(BaseModel):
+class DNADilutionDestinationPlateParams(BaseModel):
     """
     Parameters for DNA dilution with multiple source plates per dilution plate.
     """
 
     plate_id: str = Field(..., description="ID of the final dilution plate.")
-    source_plates: list[DNADilutionPlateParams] = Field(
+    source_plates: list[DNADilutionSourcePlateParams] = Field(
         default_factory=list,
         description="List of source plates for the dilution.",
         title="Source Plates",
@@ -193,12 +199,23 @@ class DNADilutionProtocolParams(BaseModel):
     Each dilution plate can have multiple source plates.
     """
 
-    plates: list[DNADilutionParams] = Field(
+    plates: list[DNADilutionDestinationPlateParams] = Field(
         default_factory=list,
         description="List of dilution plate parameters for DNA dilution.",
-        max_length=4,
+        max_length=6,
         title="Dilution Plates",
     )
+
+    @property
+    def source_plates(self) -> list[str]:
+        """Get the list of source plates from the dilution plates."""
+        return sorted(
+            {
+                source_plate.plate_id
+                for plate in self.plates
+                for source_plate in plate.source_plates
+            }
+        )
 
 
 def dna_dilution_protocol(
@@ -212,6 +229,8 @@ def dna_dilution_protocol(
     @tag: DNA
     """
     plates = params.plates
+    source_plate_ids = params.source_plates
+    print(source_plate_ids)
 
     if not protocol:
         protocol = Protocol.from_layout(
@@ -224,9 +243,8 @@ def dna_dilution_protocol(
         raise ValueError(msg)
 
     # stacks
-    rec_plates_src = protocol.deck.get_plate_stack("F1")[: len(plates)]
-    rec_plates_dst = protocol.deck.get_plate_stack("F3")[: len(plates)][::-1]
-    rec_tips_src = protocol.deck.get_tip_rack_stack("E1")[: len(plates)]
+    rec_plates_src = protocol.deck.get_plate_stack("F1")[: len(source_plate_ids)]
+    rec_plates_dst = protocol.deck.get_plate_stack("F3")[: len(source_plate_ids)][::-1]
     dil_plates_src = protocol.deck.get_plate_stack("F2")[: len(plates)]
     dil_plates_dst = protocol.deck.get_plate_stack("F4")[: len(plates)][::-1]
     dil_tips_src = protocol.deck.get_tip_rack_stack("E3")[: len(plates)]
@@ -243,6 +261,37 @@ def dna_dilution_protocol(
     water = protocol.deck.get_reservoir("B5")
 
     protocol.initialize()
+
+    for plate_params in plates:
+        source_plates = plate_params.source_plates
+        print(f"Creating {plate_params.plate_id}")
+        protocol.grip_get(dil_plates_src[-1]).grip_place(dil_plate)
+        protocol.grip_get(dil_tips_src.pop()).grip_place(dil_tips)
+        protocol.pickup_tips(dil_tips).eject_tips(holder_tips)
+        for i, source_plate in enumerate(source_plates):
+            print(
+                f"  Source Plate: {source_plate.plate_id} at index {source_plate_ids.index(source_plate.plate_id)}"
+            )
+            print(f"    Source Well: {source_plate.source_well}")
+            print(f"    Destination Well: {source_plate.destination_well}")
+            print(f"    Rows: {source_plate.rows}")
+            print(f"    Columns: {source_plate.cols}")
+
+            rows = source_plate.rows
+            cols = source_plate.cols
+
+            col_offset = sum(source_plates[k].cols for k in range(i))
+            row_offset = sum(source_plates[k].rows for k in range(i))
+
+            print(row_offset, col_offset)
+
+            protocol.grip_get(rec_plates_src.pop()).grip_place(rec_plate)
+
+            print(
+                holder_tips[
+                    -(row_offset + rows) * 2 :: 2, -(col_offset + cols) * 2 :: 2
+                ]
+            )
 
     return protocol
 
