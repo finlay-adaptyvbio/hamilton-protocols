@@ -179,6 +179,16 @@ class DNADilutionSourcePlateParams(BaseModel):
         default=100.0, description="Concentration of the stock solution"
     )
 
+    @property
+    def stock_volume(self) -> float:
+        """Calculate the volume of stock solution needed for dilution."""
+        return self.final_concentration * self.final_volume / self.stock_concentration
+
+    @property
+    def water_volume(self) -> float:
+        """Calculate the volume of water needed for dilution."""
+        return self.final_volume - self.stock_volume
+
 
 class DNADilutionDestinationPlateParams(BaseModel):
     """
@@ -218,6 +228,55 @@ class DNADilutionProtocolParams(BaseModel):
         )
 
 
+class PlateStackManager:
+    """Manages rec_plates stack state with automatic reset."""
+
+    def __init__(self, src_stack, dst_stack, source_plate_ids):
+        self.src_stack = src_stack
+        self.dst_stack = dst_stack
+        self.source_plate_ids = source_plate_ids
+        self.current_positions = []  # Track moved plates
+
+    def get_plate(self, plate_id, protocol, work_position):
+        """Get the plate for given ID, advancing stack as needed."""
+        target_idx = self.source_plate_ids.index(plate_id)
+
+        plates_to_advance = target_idx - len(self.current_positions)
+        for _ in range(plates_to_advance):
+            current_pos = len(self.current_positions)
+            src_plate = self.src_stack[current_pos]
+            dst_plate = self.dst_stack[current_pos]
+            protocol.grip_get(src_plate).grip_place(dst_plate)
+            print(
+                f"  Moving {self.source_plate_ids[current_pos]} to position {current_pos}"
+            )
+            self.current_positions.append((src_plate, dst_plate))
+
+        protocol.grip_get(self.src_stack[target_idx]).grip_place(work_position)
+        print(f"    Moving {plate_id} to work position")
+        return target_idx
+
+    def return_plate(self, plate_id, target_idx, protocol, work_position):
+        """Return plate from work position to dst stack."""
+        protocol.grip_get(work_position).grip_place(self.dst_stack[target_idx])
+        print(f"    Moving {plate_id} from work position")
+
+        if target_idx >= len(self.current_positions):
+            while len(self.current_positions) <= target_idx:
+                pos = len(self.current_positions)
+                self.current_positions.append(
+                    (self.src_stack[pos], self.dst_stack[pos])
+                )
+
+    def reset_stack(self, protocol):
+        """Reset all plates back to source positions."""
+        for i in range(len(self.current_positions) - 1, -1, -1):
+            src_plate, dst_plate = self.current_positions[i]
+            protocol.grip_get(dst_plate).grip_place(src_plate)
+            print(f"  Moving {self.source_plate_ids[i]} back to source")
+        self.current_positions.clear()
+
+
 def dna_dilution_protocol(
     params: DNADilutionProtocolParams,
     simulate: bool = False,
@@ -230,7 +289,6 @@ def dna_dilution_protocol(
     """
     plates = params.plates
     source_plate_ids = params.source_plates
-    print(source_plate_ids)
 
     if not protocol:
         protocol = Protocol.from_layout(
@@ -243,11 +301,12 @@ def dna_dilution_protocol(
         raise ValueError(msg)
 
     # stacks
-    rec_plates_src = protocol.deck.get_plate_stack("F1")[: len(source_plate_ids)]
-    rec_plates_dst = protocol.deck.get_plate_stack("F3")[: len(source_plate_ids)][::-1]
+    rec_plates_src = protocol.deck.get_plate_stack("F1")[: len(source_plate_ids)][::-1]
+    rec_plates_dst = protocol.deck.get_plate_stack("F4")[: len(source_plate_ids)]
     dil_plates_src = protocol.deck.get_plate_stack("F2")[: len(plates)]
-    dil_plates_dst = protocol.deck.get_plate_stack("F4")[: len(plates)][::-1]
+    dil_plates_dst = protocol.deck.get_plate_stack("F3")[: len(plates)][::-1]
     dil_tips_src = protocol.deck.get_tip_rack_stack("E3")[: len(plates)]
+    stack_manager = PlateStackManager(rec_plates_src, rec_plates_dst, source_plate_ids)
 
     # plates
     rec_plate = protocol.deck.get_plate("C4")
@@ -265,34 +324,67 @@ def dna_dilution_protocol(
     for plate_params in plates:
         source_plates = plate_params.source_plates
         print(f"Creating {plate_params.plate_id}")
-        protocol.grip_get(dil_plates_src[-1]).grip_place(dil_plate)
+        protocol.grip_get(dil_plates_src.pop()).grip_place(dil_plate)
         protocol.grip_get(dil_tips_src.pop()).grip_place(dil_tips)
         protocol.pickup_tips(dil_tips).eject_tips(holder_tips)
-        for i, source_plate in enumerate(source_plates):
-            print(
-                f"  Source Plate: {source_plate.plate_id} at index {source_plate_ids.index(source_plate.plate_id)}"
-            )
+
+        for i, source_plate in enumerate(
+            sorted(source_plates, key=lambda x: x.plate_id)
+        ):
+            print(f"  Using {source_plate.plate_id} at index {i}")
             print(f"    Source Well: {source_plate.source_well}")
             print(f"    Destination Well: {source_plate.destination_well}")
             print(f"    Rows: {source_plate.rows}")
             print(f"    Columns: {source_plate.cols}")
 
-            rows = source_plate.rows
-            cols = source_plate.cols
-
-            col_offset = sum(source_plates[k].cols for k in range(i))
-            row_offset = sum(source_plates[k].rows for k in range(i))
-
-            print(row_offset, col_offset)
-
-            protocol.grip_get(rec_plates_src.pop()).grip_place(rec_plate)
-
-            print(
-                holder_tips[
-                    -(row_offset + rows) * 2 :: 2, -(col_offset + cols) * 2 :: 2
-                ]
+            target_idx = stack_manager.get_plate(
+                source_plate.plate_id, protocol, rec_plate
             )
 
+            rows = source_plate.rows
+            cols = source_plate.cols
+            col_offset = sum(source_plates[k].cols for k in range(i))
+
+            tips = holder_tips[
+                -rows * 2 :: 2,
+                -(col_offset + cols) * 2 : -(col_offset * 2 + 1) : 2,
+            ]
+
+            protocol.transfer(
+                water,
+                dil_plate[alpha_to_index(source_plate.destination_well)],
+                tips,
+                volume=source_plate.water_volume,
+            )
+
+            protocol.pickup_tips(tips).aspirate(
+                rec_plate[alpha_to_index(source_plate.source_well)],
+                volume=source_plate.stock_volume,
+            ).dispense(
+                dil_plate[alpha_to_index(source_plate.destination_well)],
+                volume=source_plate.stock_volume,
+                mix_cycles=3,
+                mix_volume=source_plate.final_volume / 2,
+            ).eject_tips(mode=2)
+
+            if rows * 2 < holder_tips.definition.rows:
+                protocol.pickup_tips(
+                    holder_tips[
+                        : -rows * 2 : 2,
+                        -(col_offset + cols) * 2 : -(col_offset * 2 + 1) : 2,
+                    ]
+                ).eject_tips(mode=2)
+
+            stack_manager.return_plate(
+                source_plate.plate_id, target_idx, protocol, rec_plate
+            )
+
+        stack_manager.reset_stack(protocol)
+        protocol.grip_get(dil_plate).grip_place(dil_plates_dst.pop())
+        protocol.grip_get(dil_tips).grip_place(dil_tips, waste=True)
+        protocol.pickup_tips(holder_tips).eject_tips(mode=2)
+
+    protocol.grip_eject()
     return protocol
 
 
