@@ -459,7 +459,7 @@ def bli_plate_prep_protocol(
                 source=buffer,
                 destination=a_plate[q[0] :: 2, q[1] :: 2],
                 tips=holder_tips,
-                volume=well_vol,
+                volume=80.0,
             )
         protocol.transfer(
             source=buffer,
@@ -545,6 +545,8 @@ def bli_plate_prep_protocol(
                     volume=buffer_vol,
                 )
 
+        protocol.pickup_tips(holder_tips).eject_tips(buffer_tips)
+
         samples = sample_plate.samples
         for j, sample in enumerate(samples):
             rows = sample.rows
@@ -555,6 +557,8 @@ def bli_plate_prep_protocol(
             row_offset = sum(samples[k].rows for k in range(j))
             col_offset = sum(sample_plate_params[k].columns for k in range(i))
             tip_offset = sum(len(sample_plate_params[k].samples) for k in range(i))
+
+            protocol.pickup_tips(buffer_tips).eject_tips(holder_tips)
 
             protocol.transfer(
                 source=buffer,
@@ -577,7 +581,7 @@ def bli_plate_prep_protocol(
                 )
 
             protocol.aliquot(
-                source=tube_carrier[j + tip_offset, 0],
+                source=tube_carrier.at(j + tip_offset),
                 destination=b_plate[
                     row_offset * 2 : (rows + row_offset) * 2 : 2,
                     : cols * 2 : 2,
