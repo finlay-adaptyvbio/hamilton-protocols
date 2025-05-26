@@ -309,7 +309,7 @@ def max_plate_protocol(
     k_buffer = protocol.deck.get_reservoir("B3")
     regeneration_buffer = protocol.deck.get_reservoir("B1")
     holder_tips = protocol.deck.get_tip_rack("A4")
-    buffer_tips = protocol.deck.get_tip_rack("A3")
+    buffer_tips = protocol.deck.get_tip_rack("A2")
     hv_tips = protocol.deck.get_tip_rack("E2")
     regen_tips = hv_tips[::2, 0]
 
@@ -410,8 +410,8 @@ def bli_plate_prep_protocol(
 
     # tips
     holder_tips = protocol.deck.get_tip_rack("A4")
-    k_buffer_tips = protocol.deck.get_tip_rack("A3")
-    l_buffer_tips = protocol.deck.get_tip_rack("A2")
+    l_buffer_tips = protocol.deck.get_tip_rack("A3")
+    k_buffer_tips = protocol.deck.get_tip_rack("A2")
     hv_tips = protocol.deck.get_tip_rack("E2")
     loading_tips_src = protocol.deck.get_tip_rack_stack("E3")[:n_loading_plates]
     loading_tips = protocol.deck.get_tip_rack("D2")
@@ -605,8 +605,15 @@ def bli_plate_prep_protocol(
                 ].to_list()
 
             for w_idx in range(len(wells) - 1):
-                protocol.aspirate(wells[w_idx], volume=transfer_vol).dispense(
-                    wells[w_idx + 1], volume=transfer_vol
+                protocol.aspirate(
+                    wells[w_idx],
+                    volume=transfer_vol,
+                    mix_cycles=5,
+                    mix_volume=transfer_vol,
+                    mix_position=1.5,
+                ).dispense(
+                    wells[w_idx + 1],
+                    volume=transfer_vol,
                 )
             protocol.aspirate(wells[-1], volume=transfer_vol)
             protocol.eject_tips(mode=2)
