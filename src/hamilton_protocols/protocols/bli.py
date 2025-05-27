@@ -483,7 +483,7 @@ def bli_plate_prep_protocol(
                     src_well[0] : src_well[0] + rows,
                     src_well[1] * cols : src_well[1] + cols,
                 ],
-                tips=holder_tips[-rows * 2 :, -cols * 2 :],
+                tips=holder_tips[-rows:, -cols:],
                 volume=dil_vol,
             )
         for i in range(replicates):
@@ -567,7 +567,7 @@ def bli_plate_prep_protocol(
                     row_offset * 2 : (rows + row_offset) * 2 : 2,
                     cols * 2 :: 2,
                 ],
-                tips=holder_tips[-rows * 2 :: 2, cols * 2 :: 2],
+                tips=holder_tips[-rows::2, cols::2],
                 volume=sample_vol,
             )
             if sample_plate.c_plate:
@@ -577,7 +577,7 @@ def bli_plate_prep_protocol(
                         row_offset * 2 : (rows + row_offset) * 2 : 2,
                         ::2,
                     ],
-                    tips=holder_tips[-rows * 2 :: 2, ::2],
+                    tips=holder_tips[-rows::2, ::2],
                     volume=sample_vol,
                 )
 
@@ -595,9 +595,7 @@ def bli_plate_prep_protocol(
             protocol.pickup_tips(sample_tips).eject_tips(holder_tips)
 
             protocol.pickup_tips(
-                holder_tips[
-                    -(rows + row_offset) * 2 :: 2, -(cols + col_offset) * 2 :: 2
-                ]
+                holder_tips[-(rows + row_offset) :: 2, -(cols + col_offset) :: 2]
             )
             wells = b_plate[row_offset * 2, : cols * 2 * n_conc : cols * 2].to_list()
             if sample_plate.c_plate:
