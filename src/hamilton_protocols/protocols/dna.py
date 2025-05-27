@@ -288,7 +288,7 @@ def dna_dilution_protocol(
     @tag: DNA
     """
     plates = params.plates
-    source_plate_ids = params.source_plates
+    src_plate_ids = params.source_plates
 
     if not protocol:
         protocol = Protocol.from_layout(
@@ -301,12 +301,12 @@ def dna_dilution_protocol(
         raise ValueError(msg)
 
     # stacks
-    rec_plates_src = protocol.deck.get_plate_stack("F1")[: len(source_plate_ids)][::-1]
-    rec_plates_dst = protocol.deck.get_plate_stack("F4")[: len(source_plate_ids)]
+    rec_plates_src = protocol.deck.get_plate_stack("F1")[: len(src_plate_ids)][::-1]
+    rec_plates_dst = protocol.deck.get_plate_stack("F4")[: len(src_plate_ids)]
     dil_plates_src = protocol.deck.get_plate_stack("F2")[: len(plates)]
     dil_plates_dst = protocol.deck.get_plate_stack("F3")[: len(plates)][::-1]
     dil_tips_src = protocol.deck.get_tip_rack_stack("E3")[: len(plates)]
-    stack_manager = PlateStackManager(rec_plates_src, rec_plates_dst, source_plate_ids)
+    stack_manager = PlateStackManager(rec_plates_src, rec_plates_dst, src_plate_ids)
 
     # plates
     rec_plate = protocol.deck.get_plate("C4")
@@ -322,15 +322,13 @@ def dna_dilution_protocol(
     protocol.initialize()
 
     for plate_params in plates:
-        source_plates = plate_params.source_plates
+        src_plates = plate_params.source_plates
         print(f"Creating {plate_params.plate_id}")
         protocol.grip_get(dil_plates_src.pop()).grip_place(dil_plate)
         protocol.grip_get(dil_tips_src.pop()).grip_place(dil_tips)
         protocol.pickup_tips(dil_tips).eject_tips(holder_tips)
 
-        for i, source_plate in enumerate(
-            sorted(source_plates, key=lambda x: x.plate_id)
-        ):
+        for i, source_plate in enumerate(sorted(src_plates, key=lambda x: x.plate_id)):
             print(f"  Using {source_plate.plate_id} at index {i}")
             print(f"    Source Well: {source_plate.source_well}")
             print(f"    Destination Well: {source_plate.destination_well}")
@@ -343,7 +341,7 @@ def dna_dilution_protocol(
 
             rows = source_plate.rows
             cols = source_plate.cols
-            col_offset = sum(source_plates[k].cols for k in range(i))
+            col_offset = sum(src_plates[k].cols for k in range(i))
 
             tips = holder_tips[
                 -rows * 2 :: 2,
