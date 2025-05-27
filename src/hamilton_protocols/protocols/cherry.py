@@ -1,10 +1,9 @@
 import pandas as pd
 from adaptyv_lab import Protocol
 from pydantic import BaseModel, Field, field_validator
-from rich import print
-from hamilton_protocols.api.main import CSVData
-from hamilton_protocols.utils import alpha_to_index
+
 from hamilton_protocols import LAYOUTS_PATH
+from hamilton_protocols.api.main import CSVData
 
 
 class CherryPickPlateParams(BaseModel):
@@ -59,7 +58,8 @@ class CherryPickPlateParams(BaseModel):
                 "Destination Well"
             ].to_list()
             well_map = {
-                src_well: dst_well for src_well, dst_well in zip(src_wells, dst_wells)
+                src_well: dst_well
+                for src_well, dst_well in zip(src_wells, dst_wells, strict=False)
             }
             plate_map[src_plate_id] = well_map
         return plate_map
@@ -94,7 +94,6 @@ def cherry_pick_protocol(
     protocol: Protocol | None = None,
 ) -> Protocol:
     """Cherry pick protocol"""
-
     protocol = Protocol.from_layout(
         name="Cherry Pick Protocol",
         layout_file=LAYOUTS_PATH / "cherry-pick.lay",
