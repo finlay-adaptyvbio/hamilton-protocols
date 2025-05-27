@@ -331,8 +331,8 @@ def max_plate_protocol(
 
         protocol.transfer(
             source=k_buffer,
-            destination=max_plate[: probe_rows * 2 : 2, : probe_columns * 2 : 2],
-            tips=holder_tips[-probe_rows * 2 :: 2, -probe_columns * 2 * 2 :: 2],
+            destination=max_plate[: probe_rows * 2 :, : probe_columns * 2 :],
+            tips=holder_tips[-probe_rows * 2 : :, -probe_columns * 2 : :],
             volume=well_volume,
         )
 
@@ -412,7 +412,7 @@ def bli_plate_prep_protocol(
     holder_tips = protocol.deck.get_tip_rack("A4")
     l_buffer_tips = protocol.deck.get_tip_rack("A3")
     k_buffer_tips = protocol.deck.get_tip_rack("A2")
-    hv_tips = protocol.deck.get_tip_rack("E2")
+    hv_tips = protocol.deck.get_tip_rack("E2").iterlabware(num_channels=1)
     loading_tips_src = protocol.deck.get_tip_rack_stack("E3")[:n_loading_plates]
     loading_tips = protocol.deck.get_tip_rack("D2")
     sample_tips = protocol.deck.get_tip_rack("A1")
@@ -424,6 +424,7 @@ def bli_plate_prep_protocol(
 
     # carriers
     tube_carrier = protocol.deck.get_tube_carrier("C1")
+    tubes = tube_carrier.iterlabware(num_channels=1)
 
     protocol.initialize()
 
@@ -581,12 +582,12 @@ def bli_plate_prep_protocol(
                 )
 
             protocol.aliquot(
-                source=tube_carrier.at(j + tip_offset),
+                source=next(tubes),
                 destination=b_plate[
                     row_offset * 2 : (rows + row_offset) * 2 : 2,
                     : cols * 2 : 2,
                 ],
-                tips=hv_tips[j + tip_offset, 0],
+                tips=next(hv_tips),
                 volume=init_conc_vol,
             )
 
